@@ -65,6 +65,14 @@ module BrowserReviewGate
         'git clone --quiet --depth 1 --branch "main" "https://git.example/tools/browser_review_gate.git"'
     end
 
+    def test_ci_can_use_a_copy_of_the_gem_kept_in_the_project
+      installer(agents: [ "codex" ], gem_source: "path:vendor/browser_review_gate").install
+
+      assert_includes read(".github/workflows/browser-review-gate.yml"),
+        'echo "$GITHUB_WORKSPACE/vendor/browser_review_gate/exe" >> "$GITHUB_PATH"'
+      assert_raises(Error) { installer(agents: [ "codex" ], gem_source: "path:../outside; rm -rf x").install }
+    end
+
     def test_a_broken_settings_file_stops_the_install_before_anything_is_written
       touch(".claude/settings.json", "{not json")
 

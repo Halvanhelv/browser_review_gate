@@ -8,7 +8,7 @@ module BrowserReviewGate
       desc "Set up the browser review gate: CI workflow, settings, playbook, and AI agent entry points."
 
       class_option :agents, type: :array, desc: "claude, cursor, codex (default: detected from the project)"
-      class_option :gem_source, type: :string, desc: "How CI gets the gem: rubygems (default) or git:URL[#REF]"
+      class_option :gem_source, type: :string, desc: "How CI gets the gem: rubygems (default), git:URL[#REF] or path:DIR"
       class_option :workflow, type: :string, desc: "Workflow file name under .github/workflows"
 
       def install

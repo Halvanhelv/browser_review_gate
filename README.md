@@ -34,7 +34,7 @@ Then:
 2. Fill `start_command`, `url` and `sign_in` in `.github/browser-review-gate.yml`.
 3. Merge to the default branch. The workflow uses `pull_request_target`, so it runs from there.
 
-Until the gem is on RubyGems, CI can take it from a git repository: `--gem-source "git:https://host/owner/browser_review_gate.git#v0.1.0"`.
+Until the gem is on RubyGems, CI can take it from a git repository (`--gem-source "git:https://host/owner/browser_review_gate.git#v0.1.0"`) or from a copy kept in the project (`--gem-source path:vendor/browser_review_gate`).
 
 ## How a PR goes through
 

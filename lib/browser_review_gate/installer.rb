@@ -66,12 +66,14 @@ module BrowserReviewGate
     # setup-ruby reads the project's own version file when there is one.
     def ruby_version = exist?(".ruby-version") || exist?(".tool-versions") ? nil : "3.4"
 
-    # How CI gets the gem: from RubyGems, or from a git repository as "git:URL" or "git:URL#REF".
+    # How CI gets the gem: from RubyGems, from a git repository ("git:URL" or "git:URL#REF"), or from a
+    # copy kept in the project itself ("path:DIR", read from the base branch like the rest of the checkout).
     def install_command
       return "gem install browser_review_gate -v #{VERSION} --no-document" if @gem_source.nil? || @gem_source == "rubygems"
+      return %(echo "$GITHUB_WORKSPACE/#{@gem_source.delete_prefix("path:")}/exe" >> "$GITHUB_PATH") if @gem_source.match?(%r{\Apath:[\w./-]+\z})
 
       url, ref = @gem_source.delete_prefix("git:").split("#", 2)
-      raise Error, "--gem-source must be rubygems or git:URL[#REF]" unless @gem_source.start_with?("git:") && !url.to_s.empty?
+      raise Error, "--gem-source must be rubygems, git:URL[#REF] or path:DIR" unless @gem_source.start_with?("git:") && !url.to_s.empty?
 
       %(git clone --quiet --depth 1 --branch "#{ref || "v#{VERSION}"}" "#{url}" "$RUNNER_TEMP/browser_review_gate" && ) +
         %(echo "$RUNNER_TEMP/browser_review_gate/exe" >> "$GITHUB_PATH")
