@@ -66,6 +66,9 @@ module BrowserReviewGate
       [ [ "", "not logged in", false ], [ JSON.generate(is_error: true), "", true ], [ "not json", "", true ] ].each do |outcome|
         assert_raises(Error) { ModelClient.new(command: "claude", runner: ->(*) { outcome }).complete(system: "", user: "", schema: {}) }
       end
+      refused = [ JSON.generate(is_error: true, result: "Not logged in"), "", false ]
+      error = assert_raises(Error) { ModelClient.new(command: "claude", runner: ->(*) { refused }).complete(system: "", user: "", schema: {}) }
+      assert_includes error.message, "Not logged in"
     end
 
     def test_status_names_the_next_step

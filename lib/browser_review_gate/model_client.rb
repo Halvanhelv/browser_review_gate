@@ -7,6 +7,7 @@ module BrowserReviewGate
   # the model can only answer. The GitHub token is removed from its environment.
   class ModelClient
     NPX = %w[npx --yes @anthropic-ai/claude-code@2.1.288].freeze
+    CREDENTIALS = %w[CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY].freeze
 
     # `runner` takes the environment, argv and stdin, and returns [stdout, stderr, success?].
     def initialize(command: nil, model: nil, runner: nil)
@@ -21,18 +22,29 @@ module BrowserReviewGate
                           "--json-schema", JSON.generate(schema), "--output-format", "json" ]
       argv += [ "--model", @model ] if @model
       stdout, stderr, success = @runner.call(environment, argv, user)
-      raise Error, "claude failed: #{"#{stderr} #{stdout}".strip[0, 500]}" unless success
+      result = parse(stdout)
+      answer = result["structured_output"] if success && result["is_error"] == false
+      return JSON.generate(answer) if answer.is_a?(Hash)
 
-      result = JSON.parse(stdout)
-      answer = result["structured_output"] if result.is_a?(Hash) && result["is_error"] == false
-      raise Error, "claude returned no structured answer: #{stdout.to_s[0, 500]}" unless answer.is_a?(Hash)
-
-      JSON.generate(answer)
-    rescue JSON::ParserError
-      raise Error, "claude returned output that is not JSON"
+      raise Error, "The model gave no answer: #{failure(result, stdout, stderr)}"
     end
 
     private
+
+    def parse(stdout)
+      result = JSON.parse(stdout.to_s)
+      result.is_a?(Hash) ? result : {}
+    rescue JSON::ParserError
+      {}
+    end
+
+    # The CLI explains a failure in `result`; a missing credential is the usual cause in CI.
+    def failure(result, stdout, stderr)
+      reason = result["result"].to_s.strip
+      reason = "#{stderr} #{stdout}".strip[0, 300] if reason.empty?
+      missing = CREDENTIALS.all? { |name| ENV[name].to_s.empty? }
+      missing ? "#{reason} (neither #{CREDENTIALS.join(" nor ")} is set)" : reason
+    end
 
     # An installed `claude` is used as is; CI has none and fetches a pinned version on demand.
     def default_command
@@ -43,7 +55,7 @@ module BrowserReviewGate
     # Empty credentials are unset: the workflow passes both kinds and only one is configured.
     def environment
       unset = %w[GH_TOKEN GITHUB_TOKEN].to_h { |name| [ name, nil ] }
-      %w[CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY].each { |name| unset[name] = nil if ENV[name].to_s.empty? }
+      CREDENTIALS.each { |name| unset[name] = nil if ENV[name].to_s.empty? }
       unset
     end
 
