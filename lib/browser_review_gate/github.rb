@@ -1,0 +1,81 @@
+require "json"
+
+module BrowserReviewGate
+  # Everything the gate reads from or writes to a pull request, through the `gh` CLI.
+  class GitHub
+    def initialize(repository: nil, shell: Shell.new)
+      @repository = repository.to_s.empty? ? nil : repository
+      @shell = shell
+    end
+
+    def repository
+      @repository ||= JSON.parse(@shell.call("gh", "repo", "view", "--json", "nameWithOwner")).fetch("nameWithOwner")
+    end
+
+    def pull_request(number)
+      api("repos/#{repository}/pulls/#{number}")
+    end
+
+    # The PR of the current branch, or nil when the branch has none.
+    def pull_request_number_for_branch
+      JSON.parse(@shell.call("gh", "pr", "view", "--json", "number")).fetch("number")
+    rescue Error
+      nil
+    end
+
+    def comments(number)
+      pages("repos/#{repository}/issues/#{number}/comments")
+    end
+
+    def files(number)
+      pages("repos/#{repository}/pulls/#{number}/files")
+    end
+
+    def login
+      @shell.call("gh", "api", "user", "--jq", ".login").strip
+    end
+
+    def create_comment(number, body)
+      api("repos/#{repository}/issues/#{number}/comments", method: "POST", input: { body: body })
+    end
+
+    def update_comment(comment_id, body)
+      api("repos/#{repository}/issues/comments/#{comment_id}", method: "PATCH", input: { body: body })
+    end
+
+    # Adding a label to a PR creates the label in the repository when it does not exist yet.
+    def add_label(number, label)
+      api("repos/#{repository}/issues/#{number}/labels", method: "POST", input: { labels: [ label ] })
+    end
+
+    def remove_label(number, label)
+      @shell.call("gh", "api", "-X", "DELETE", "repos/#{repository}/issues/#{number}/labels/#{label}")
+    end
+
+    def remove_reviewers(number, reviewers:, team_reviewers:)
+      api("repos/#{repository}/pulls/#{number}/requested_reviewers", method: "DELETE",
+        input: { reviewers: reviewers, team_reviewers: team_reviewers })
+    end
+
+    def dispatch_workflow(workflow, number)
+      @shell.call("gh", "workflow", "run", workflow, "-f", "pr_number=#{number}")
+    end
+
+    private
+
+    def api(path, method: "GET", input: nil)
+      argv = [ "gh", "api", "-X", method, path ]
+      argv += [ "--input", "-" ] if input
+      output = @shell.call(*argv, stdin_data: input && JSON.generate(input))
+      output.strip.empty? ? {} : JSON.parse(output)
+    rescue JSON::ParserError
+      raise Error, "gh returned output that is not JSON for #{path}"
+    end
+
+    def pages(path)
+      JSON.parse(@shell.call("gh", "api", "--paginate", "--slurp", "#{path}?per_page=100")).flatten(1)
+    rescue JSON::ParserError
+      raise Error, "gh returned output that is not JSON for #{path}"
+    end
+  end
+end

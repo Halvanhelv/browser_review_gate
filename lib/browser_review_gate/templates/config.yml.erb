@@ -1,0 +1,24 @@
+# Settings for browser_review_gate. Every key is optional.
+
+# How an AI coding agent starts and reaches the app for a browser run.
+start_command:<%= start_command ? " #{start_command.inspect}" : "" %>
+url:<%= url ? " #{url.inspect}" : "" %>
+# How to sign in locally, e.g. "use the seed account from db/seeds.rb". No real credentials here.
+sign_in:
+
+# Workflow file name under .github/workflows, used to request an assessment by hand.
+workflow: <%= workflow %>
+
+# PRs that are never gated.
+skip_authors:
+  - "dependabot[bot]"
+  - "github-actions[bot]"
+skip_branch_prefixes: []
+
+# A PR that only touches these paths cannot change browser behavior; no model call is made.
+ignore_paths:
+  - "docs/**"
+  - "test/**"
+  - "spec/**"
+  - "**/*.md"
+  - ".github/**"

@@ -1,0 +1,64 @@
+# browser_review_gate:managed <%= BrowserReviewGate::VERSION %> — re-run `browser-review-gate install` to update.
+#
+# Decides whether a PR needs a browser run and keeps human review requests behind it.
+# A tool-free model call proposes the decision; the gem validates it and does every write.
+# pull_request_target runs this file from the base branch. PR code is never checked out or
+# executed; the diff is read through the API as data.
+#
+# Setup: a CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret. Settings: .github/browser-review-gate.yml
+# A PR opened before this workflow existed is assessed on its next event; dispatch with pr_number
+# to assess it now.
+
+name: Browser review gate
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, review_requested]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request to assess"
+        type: number
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: browser-review-gate-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+<% if ruby_version -%>
+          ruby-version: "<%= ruby_version %>"
+<% end -%>
+          bundler-cache: false
+
+      - name: Install browser_review_gate
+        run: |
+          <%= install_command %>
+
+      # PR text is never interpolated into the shell: only the number reaches it.
+      - name: Assess the change and keep review requests behind browser verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: browser-review-gate ci "$PR_NUMBER"

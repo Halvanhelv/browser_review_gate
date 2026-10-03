@@ -1,0 +1,10 @@
+---
+name: browser-pr-verification
+description: Use when a branch or an open pull request needs browser verification before human review - before the PR is opened, or after the PR comment asks for it.
+argument-hint: "[PR number] [optional reviewer]"
+---
+<!-- browser_review_gate:managed <%= BrowserReviewGate::VERSION %> -->
+
+# Verify a PR in the browser
+
+Read `<%= playbook_path %>` and follow it exactly. The arguments are: `$ARGUMENTS` (a PR number, optionally followed by a reviewer login; empty means the current branch).

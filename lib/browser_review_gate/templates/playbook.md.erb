@@ -1,0 +1,48 @@
+<!-- browser_review_gate:managed <%= BrowserReviewGate::VERSION %> — re-run `browser-review-gate install` to update. -->
+# Browser verification before human review
+
+A pull request that changes what a person sees or does in a browser must be exercised in a browser before a human reviews it. CI decides whether a PR needs that and writes the decision in one "Browser verification" comment. Until a passing run is published, reviewer requests on such a PR are taken back.
+
+This file is the playbook for the AI coding agent that does the run. The person starts it with `<%= command %> NUMBER` for an open PR, or `<%= command %>` on a branch that has no PR yet.
+
+## Steps
+
+1. Run `browser-review-gate status` (add `--pr NUMBER` when a number was given). It prints JSON; follow `next`:
+   - `nothing`: no run is needed, or the PR is already verified. Say that review can be requested.
+   - `check_out_pr_head`: check out the PR head with a clean worktree, then start again.
+   - `request_assessment`: run `browser-review-gate request-assessment NUMBER`, wait about a minute, then start again.
+   - `publish_saved`: a run saved for this commit exists. Run `browser-review-gate publish` and stop; nothing runs again.
+   - `open_pull_request`: a run is saved and waits for the PR. Tell the person to open it.
+   - `run_and_publish` or `run_and_save`: continue with step 2.
+2. Read the diff against the base branch and the earlier report in the PR, if any. List the scenarios for the browser-visible behavior that changed. Do not re-run behavior an earlier passing case still covers.
+3. Start the app and open it in a browser tool. `app` in the status output says how: start command, URL, sign-in hint. Use local test data and do not destroy existing data. If the app, the data, or a browser tool is missing, report the blocker. Reading code and running unit tests does not replace a browser run.
+4. Run every scenario end to end. After key actions check the page state, console errors, and failed requests. Record what you observed. A skipped or blocked scenario is not a pass.
+5. Write the report as JSON outside the repository (see the shape below). Set `coverage_complete` to true only when every scenario from step 2 ran.
+6. Publish or save, from the checkout that was tested, with everything committed and pushed:
+   - PR exists: `browser-review-gate publish --report PATH` (add `--pr NUMBER` when the branch has several). It posts the cases with their outcomes. Only a complete all-pass report adds the `<%= label %>` label.
+   - No PR yet: `browser-review-gate save --report PATH`. The run is published when the PR for this commit is opened. A new commit makes it stale.
+7. Check the command result and the PR. A non-zero exit can still mean a report was posted: a failing or incomplete report is visible in the PR and review stays closed.
+8. Request a reviewer only when the person named one and only after the run passed. Otherwise say that review can be requested.
+
+## Report shape
+
+```json
+{
+  "tested_sha": "<full commit SHA that was tested>",
+  "coverage_complete": true,
+  "cases": [
+    { "id": "BROWSER-1", "name": "The changed interaction completes", "result": "pass", "details": "What was observed." }
+  ],
+  "excluded": [
+    { "name": "Sign-in through an external provider", "reason": "Needs a real provider account; covered by integration tests." }
+  ]
+}
+```
+
+`result` is `pass` or `fail`. `excluded` is optional: list a scenario there only when the person decided it stays outside the local run. Never exclude a scenario on your own to make the run complete. Keep customer and real company names out of the report.
+
+## Rules
+
+- Run the awkward path in the browser, or mark coverage incomplete and leave review closed. Do not declare a run done from tests and code reading.
+- Keep the report file and browser artifacts outside the repository. The publisher refuses a checkout with modified or untracked files and lists them.
+- After an unrelated commit, do not run everything again: use the PR comment and the earlier report to pick only what is new.
