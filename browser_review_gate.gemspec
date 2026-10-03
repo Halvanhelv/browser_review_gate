@@ -15,6 +15,4 @@ Gem::Specification.new do |spec|
   spec.bindir = "exe"
   spec.executables = [ "browser-review-gate" ]
   spec.require_paths = [ "lib" ]
-
-  spec.add_dependency "base64"
 end

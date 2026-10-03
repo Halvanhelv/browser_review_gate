@@ -9,19 +9,30 @@ require_relative "browser_review_gate/version"
 module BrowserReviewGate
   Error = Class.new(StandardError)
 
-  autoload :Assessment, "browser_review_gate/assessment"
-  autoload :Assessor, "browser_review_gate/assessor"
-  autoload :CLI, "browser_review_gate/cli"
-  autoload :Config, "browser_review_gate/config"
-  autoload :Gate, "browser_review_gate/gate"
-  autoload :GitHub, "browser_review_gate/github"
-  autoload :Hook, "browser_review_gate/hook"
-  autoload :Installer, "browser_review_gate/installer"
-  autoload :Markdown, "browser_review_gate/markdown"
-  autoload :ModelClient, "browser_review_gate/model_client"
-  autoload :Publisher, "browser_review_gate/publisher"
-  autoload :Report, "browser_review_gate/report"
-  autoload :SavedReport, "browser_review_gate/saved_report"
-  autoload :Shell, "browser_review_gate/shell"
-  autoload :Status, "browser_review_gate/status"
+  # URL-safe Base64 without padding, for the data kept in PR comment markers. Uses nothing outside the
+  # core, so the executable also runs from a plain copy of this directory.
+  module Marker
+    def self.encode(text) = [ text ].pack("m0").tr("+/", "-_").delete("=")
+
+    def self.decode(payload)
+      padded = payload.tr("-_", "+/")
+      "#{padded}#{"=" * ((4 - padded.length % 4) % 4)}".unpack1("m0")
+    end
+  end
+
+  autoload :Assessment, File.join(__dir__, "browser_review_gate/assessment")
+  autoload :Assessor, File.join(__dir__, "browser_review_gate/assessor")
+  autoload :CLI, File.join(__dir__, "browser_review_gate/cli")
+  autoload :Config, File.join(__dir__, "browser_review_gate/config")
+  autoload :Gate, File.join(__dir__, "browser_review_gate/gate")
+  autoload :GitHub, File.join(__dir__, "browser_review_gate/github")
+  autoload :Hook, File.join(__dir__, "browser_review_gate/hook")
+  autoload :Installer, File.join(__dir__, "browser_review_gate/installer")
+  autoload :Markdown, File.join(__dir__, "browser_review_gate/markdown")
+  autoload :ModelClient, File.join(__dir__, "browser_review_gate/model_client")
+  autoload :Publisher, File.join(__dir__, "browser_review_gate/publisher")
+  autoload :Report, File.join(__dir__, "browser_review_gate/report")
+  autoload :SavedReport, File.join(__dir__, "browser_review_gate/saved_report")
+  autoload :Shell, File.join(__dir__, "browser_review_gate/shell")
+  autoload :Status, File.join(__dir__, "browser_review_gate/status")
 end

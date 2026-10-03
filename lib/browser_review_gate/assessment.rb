@@ -1,4 +1,3 @@
-require "base64"
 require "json"
 
 module BrowserReviewGate
@@ -32,7 +31,7 @@ module BrowserReviewGate
       comment = latest_comment(comments)
       return unless comment
 
-      assessment = new(JSON.parse(Base64.urlsafe_decode64(comment["body"].match(MARKER)[1])))
+      assessment = new(JSON.parse(Marker.decode(comment["body"].match(MARKER)[1])))
       assessment if assessment.valid?
     rescue ArgumentError, JSON::ParserError
       nil
@@ -67,7 +66,7 @@ module BrowserReviewGate
     # `verified` is true when a passing report covers the browser behavior of this commit.
     # `command` is what the author runs in an AI coding agent, e.g. "/browser-pr-verification 42".
     def markdown(verified:, command:)
-      payload = Base64.urlsafe_encode64(JSON.generate(to_h), padding: false)
+      payload = Marker.encode(JSON.generate(to_h))
       [ "## Browser verification", "", summary(verified, command), "",
         "Assessed commit `#{assessed_sha}`.", "", "<!-- browser-verification-assessment:#{payload} -->" ].join("\n")
     end

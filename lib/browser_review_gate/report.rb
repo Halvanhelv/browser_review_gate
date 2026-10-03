@@ -1,4 +1,3 @@
-require "base64"
 require "json"
 
 module BrowserReviewGate
@@ -17,7 +16,7 @@ module BrowserReviewGate
 
     # The report data embedded in a comment body; raises Error when the marker is damaged.
     def self.data_from(body)
-      JSON.parse(Base64.urlsafe_decode64(body.to_s.match(MARKER)[1]))
+      JSON.parse(Marker.decode(body.to_s.match(MARKER)[1]))
     rescue ArgumentError, JSON::ParserError
       raise Error, "Existing browser verification report has a malformed data marker"
     end
@@ -68,7 +67,7 @@ module BrowserReviewGate
         "Verified by **#{Markdown.escape(verified_by)}** for commit `#{tested_sha}`.", coverage, "" ]
       lines.concat(cases.map { |test_case| markdown_case(test_case) })
       lines.concat([ "", "Not exercised in the browser, by the author's decision:" ] + excluded.map { |entry| markdown_excluded(entry) }) if excluded.any?
-      payload = Base64.urlsafe_encode64(JSON.generate(to_h), padding: false)
+      payload = Marker.encode(JSON.generate(to_h))
       lines.concat([ "", "<!-- browser-verification-report:#{payload} -->" ]).join("\n")
     end
 

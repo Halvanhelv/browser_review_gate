@@ -122,7 +122,8 @@ module BrowserReviewGate
     def run_cli(*argv, login: "dev-user", stdin: "")
       environment = { "PATH" => "#{BIN}:#{ENV["PATH"]}", "FAKE_GH_STATE" => @state, "FAKE_GH_LOGIN" => login,
                       "FAKE_CLAUDE_LOG" => @model_log, "GH_REPO" => "example/project" }
-      Open3.capture2e(environment, RbConfig.ruby, EXE, *argv, stdin_data: stdin, chdir: @repo)
+      # --disable-gems proves the executable runs from a plain copy, the way CI uses a vendored one.
+      Open3.capture2e(environment, RbConfig.ruby, "--disable-gems", EXE, *argv, stdin_data: stdin, chdir: @repo)
     end
 
     def run!(*argv, **options)
