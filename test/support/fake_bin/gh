@@ -1,0 +1,51 @@
+#!/usr/bin/env ruby
+# A pull request held in a JSON file (FAKE_GH_STATE), answering the `gh` calls the gem makes.
+require "json"
+
+state_path = ENV.fetch("FAKE_GH_STATE")
+state = JSON.parse(File.read(state_path))
+login = ENV.fetch("FAKE_GH_LOGIN", "dev-user")
+argv = ARGV.dup
+save = -> { File.write(state_path, JSON.pretty_generate(state)) }
+input = -> { JSON.parse($stdin.read) }
+pull = lambda do
+  { number: 7, title: "Change a page", user: { login: "dev-user" }, head: { sha: state["head"], ref: "feature/thing" },
+    labels: state["labels"].map { |name| { name: name } },
+    requested_reviewers: state["reviewers"].map { |name| { login: name } }, requested_teams: [] }
+end
+
+case argv
+in [ "repo", "view", *] then puts JSON.generate(nameWithOwner: "example/project")
+in [ "pr", "view", "--json", "number" ]
+  abort "no pull requests found" unless state["open"]
+  puts JSON.generate(number: 7)
+in [ "workflow", "run", workflow, "-f", field ]
+  state["dispatched"] << [ workflow, field ]
+  save.call
+in [ "api", "user", "--jq", ".login" ] then puts login
+in [ "api", "--paginate", "--slurp", path ] if path.include?("/comments") then puts JSON.generate([ state["comments"] ])
+in [ "api", "--paginate", "--slurp", path ] if path.include?("/files") then puts JSON.generate([ state["files"] ])
+in [ "api", "-X", "GET", path ] if path.end_with?("/pulls/7") then puts JSON.generate(pull.call)
+in [ "api", "-X", "POST", path, "--input", "-" ] if path.end_with?("/comments")
+  state["comments"] << { id: state["comments"].size + 1, body: input.call.fetch("body"), user: { login: login } }
+  save.call
+  puts "{}"
+in [ "api", "-X", "PATCH", path, "--input", "-" ]
+  id = path[/comments\/(\d+)/, 1].to_i
+  state["comments"].find { |comment| comment["id"] == id }["body"] = input.call.fetch("body")
+  save.call
+  puts "{}"
+in [ "api", "-X", "POST", path, "--input", "-" ] if path.end_with?("/labels")
+  state["labels"] |= input.call.fetch("labels")
+  save.call
+  puts "[]"
+in [ "api", "-X", "DELETE", path ] if path.include?("/labels/")
+  state["labels"].delete(path.split("/").last)
+  save.call
+in [ "api", "-X", "DELETE", path, "--input", "-" ] if path.end_with?("/requested_reviewers")
+  state["reviewers"] -= input.call.fetch("reviewers")
+  save.call
+  puts "{}"
+else
+  abort "fake gh: unexpected call #{argv.inspect}"
+end

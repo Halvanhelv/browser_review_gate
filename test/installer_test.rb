@@ -64,6 +64,13 @@ module BrowserReviewGate
         'git clone --quiet --depth 1 --branch "main" "https://git.example/tools/browser_review_gate.git"'
     end
 
+    def test_a_broken_settings_file_stops_the_install_before_anything_is_written
+      touch(".claude/settings.json", "{not json")
+
+      assert_raises(Error) { installer.install }
+      assert_equal [ ".claude" ], Dir.children(@root)
+    end
+
     def test_a_dry_run_writes_nothing_and_unknown_agents_are_refused
       installer(agents: [ "codex" ], dry_run: true).install
       assert_empty Dir.children(@root)

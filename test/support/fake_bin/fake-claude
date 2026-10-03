@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+# Stands in for the model: a PR that touches a view needs a browser run, anything else does not.
+require "json"
+
+File.write(ENV.fetch("FAKE_CLAUDE_LOG"), "called\n", mode: "a")
+prompt = $stdin.read
+required = prompt.include?("app\\/views\\/")
+puts JSON.generate(is_error: false, structured_output: {
+  decision: required ? "required" : "not-required",
+  reason: required ? "A view changed." : "Nothing a browser shows changed.",
+  covered_by_report: false
+})

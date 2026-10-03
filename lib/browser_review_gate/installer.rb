@@ -27,6 +27,7 @@ module BrowserReviewGate
       unknown = agents - AGENTS
       raise Error, "Unknown agents: #{unknown.join(", ")} (known: #{AGENTS.join(", ")})" if unknown.any?
 
+      preflight(agents)
       create_only(Config::PATH, render("config.yml"))
       managed(".github/workflows/#{workflow}", render("workflow.yml"))
       managed(PLAYBOOK, render("playbook.md"))
@@ -76,6 +77,17 @@ module BrowserReviewGate
         %(echo "$RUNNER_TEMP/browser_review_gate/exe" >> "$GITHUB_PATH")
     end
 
+    JSON_FILES = { "claude" => ".claude/settings.json", "cursor" => ".cursor/hooks.json" }.freeze
+
+    # Nothing is written when a settings file that must be merged cannot be read.
+    def preflight(agents)
+      agents.filter_map { |agent| JSON_FILES[agent] }.each do |path|
+        JSON.parse(File.read(File.join(@root, path))) if exist?(path)
+      rescue JSON::ParserError
+        raise Error, "#{path} is not valid JSON; fix it and run install again"
+      end
+    end
+
     def install_claude
       managed(".claude/skills/browser-pr-verification/SKILL.md", render("claude_skill.md"))
       merge_json(".claude/settings.json") do |settings|
@@ -95,9 +107,9 @@ module BrowserReviewGate
     # Codex has no project hook, so its instructions also cover publishing after the PR is opened.
     def install_codex
       path = "AGENTS.md"
-      current = exist?(path) ? File.read(File.join(@root, path)) : ""
+      current = exist?(path) ? File.read(File.join(@root, path)) : nil
       block = render("agents_block.md")
-      updated = current.match?(BLOCK) ? current.sub(BLOCK) { block } : [ current.rstrip, block ].reject(&:empty?).join("\n\n")
+      updated = current.to_s.match?(BLOCK) ? current.sub(BLOCK) { block } : [ current.to_s.rstrip, block ].reject(&:empty?).join("\n\n")
       write(path, updated.end_with?("\n") ? updated : "#{updated}\n", current)
     end
 
@@ -127,8 +139,6 @@ module BrowserReviewGate
       settings = current ? JSON.parse(current) : {}
       yield settings
       write(path, "#{JSON.pretty_generate(settings)}\n", current)
-    rescue JSON::ParserError
-      raise Error, "#{path} is not valid JSON; fix it and run install again"
     end
 
     def write(path, content, current)
