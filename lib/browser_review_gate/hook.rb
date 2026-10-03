@@ -25,10 +25,10 @@ module BrowserReviewGate
       "Saved browser verification was not published: #{error.message}"
     end
 
-    # Claude Code reads a JSON object; other agents show plain text.
+    # Claude Code and Codex read a JSON object; other agents show plain text.
     def self.render(message, agent)
       return if message.nil?
-      return message unless agent == "claude"
+      return message unless %w[claude codex].include?(agent)
 
       JSON.generate(hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: message })
     end

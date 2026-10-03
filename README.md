@@ -24,7 +24,7 @@ One run sets up everything and can be repeated after a gem update:
 | `docs/browser-review-gate.md` | The playbook every agent follows |
 | `.claude/skills/browser-pr-verification/SKILL.md`, hook in `.claude/settings.json` | Claude Code |
 | `.cursor/commands/browser-pr-verification.md`, hook in `.cursor/hooks.json` | Cursor |
-| Section in `AGENTS.md` | Codex and other agents that read `AGENTS.md` |
+| Section in `AGENTS.md`, hook in `.codex/hooks.json` | Codex (the `AGENTS.md` section also serves other agents that read it) |
 
 The installer detects which agents the project uses (`.claude/` or `CLAUDE.md`, `.cursor/` or `.cursorrules`, `.codex/` or `AGENTS.md`) and sets up all of them. Choose explicitly with `--agents claude,cursor,codex`. Preview with `--dry-run`. Files you wrote yourself are never replaced without `--force`.
 
@@ -39,7 +39,7 @@ Until the gem is on RubyGems, CI can take it from a git repository: `--gem-sourc
 ## How a PR goes through
 
 1. The author runs `/browser-pr-verification` on the branch before opening the PR. The agent runs the scenarios and saves the results for that commit inside the git directory.
-2. The PR is opened. In Claude Code and Cursor a hook publishes the saved results right after `gh pr create`. Anywhere else, the command from the PR comment publishes them without a new run.
+2. The PR is opened. In Claude Code, Cursor and Codex a hook publishes the saved results right after `gh pr create` (Codex asks you to trust the hook once in `/hooks`). Anywhere else, the command from the PR comment publishes them without a new run.
 3. CI finds a passing run on the PR's own commit and leaves reviewer requests in place.
 
 If the PR is opened without a run, the comment shows the ready command, for example `/browser-pr-verification 42`.
@@ -54,7 +54,7 @@ browser-review-gate status [--pr N]             what the PR needs and what to do
 browser-review-gate publish [--pr N] [--report PATH]
 browser-review-gate save --report PATH          keep results until the PR is opened
 browser-review-gate request-assessment N        assess a PR that has no decision yet
-browser-review-gate hook [claude|cursor]        post-command hook
+browser-review-gate hook [claude|cursor|codex]  post-command hook
 browser-review-gate ci N                        what the workflow runs
 ```
 

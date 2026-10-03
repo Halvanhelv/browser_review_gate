@@ -14,7 +14,7 @@ module BrowserReviewGate
         publish [--pr NUMBER] [--report PATH]     publish observed results (default: the saved run)
         save --report PATH                        keep results until the PR for this commit is opened
         request-assessment NUMBER                 ask CI to assess a PR that has no decision yet
-        hook [claude|cursor]                      post-command hook: publish the saved run after `gh pr create`
+        hook [claude|cursor|codex]                post-command hook: publish the saved run after `gh pr create`
 
       For CI
         ci NUMBER                                 assess the PR and take back premature reviewer requests

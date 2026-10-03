@@ -77,7 +77,7 @@ module BrowserReviewGate
         %(echo "$RUNNER_TEMP/browser_review_gate/exe" >> "$GITHUB_PATH")
     end
 
-    JSON_FILES = { "claude" => ".claude/settings.json", "cursor" => ".cursor/hooks.json" }.freeze
+    JSON_FILES = { "claude" => ".claude/settings.json", "cursor" => ".cursor/hooks.json", "codex" => ".codex/hooks.json" }.freeze
 
     # Nothing is written when a settings file that must be merged cannot be read.
     def preflight(agents)
@@ -104,8 +104,13 @@ module BrowserReviewGate
       end
     end
 
-    # Codex has no project hook, so its instructions also cover publishing after the PR is opened.
+    # Codex runs a project hook only after the person trusts it in /hooks, so the AGENTS.md section also
+    # tells the agent to publish after it opens the PR.
     def install_codex
+      merge_json(".codex/hooks.json") do |settings|
+        entries = ((settings["hooks"] ||= {})["PostToolUse"] ||= [])
+        entries << { "matcher" => "^Bash$", "hooks" => [ { "type" => "command", "command" => "#{HOOK} codex", "timeout" => 60 } ] }
+      end
       path = "AGENTS.md"
       current = exist?(path) ? File.read(File.join(@root, path)) : nil
       block = render("agents_block.md")

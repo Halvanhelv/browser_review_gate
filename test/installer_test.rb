@@ -36,6 +36,7 @@ module BrowserReviewGate
       assert_equal "lint", settings.dig("hooks", "Stop", 0, "hooks", 0, "command")
       assert_equal "browser-review-gate hook claude", settings.dig("hooks", "PostToolUse", 0, "hooks", 0, "command")
       assert_equal "browser-review-gate hook cursor", JSON.parse(read(".cursor/hooks.json")).dig("hooks", "afterShellExecution", 0, "command")
+      assert_equal "browser-review-gate hook codex", JSON.parse(read(".codex/hooks.json")).dig("hooks", "PostToolUse", 0, "hooks", 0, "command")
 
       agents = read("AGENTS.md")
       assert_includes agents, "Existing notes."
