@@ -29,7 +29,7 @@ module BrowserReviewGate
     private
 
     def next_step(assessment, verified, saved, on_pr_head)
-      return "nothing" if assessment && (!assessment.required? || verified)
+      return "nothing" if verified || (assessment && !assessment.required?)
       return "check_out_pr_head" unless on_pr_head
       return "publish_saved" if saved
       return "request_assessment" unless assessment
