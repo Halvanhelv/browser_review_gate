@@ -39,6 +39,10 @@ module BrowserReviewGate
         headings, labels, translations, typos, colors, spacing, icons, or reordering static content, with
         no change in what a person can do. Not reaching the browser means documentation, tests, CI
         workflows, developer tooling, and background-only or internal-only code.
+      - A dependency update is `required` when the dependency runs in the browser or takes part in
+        rendering or serving pages: a JavaScript or CSS package, a view, component or sanitizer library,
+        the web framework itself. It is `not-required` when the dependency is used only in development,
+        tests or CI.
       - A change that mixes both is `required`.
       - When you cannot tell whether behavior changed, or a patch is truncated or missing for a file that
         could change behavior, choose `required`.
