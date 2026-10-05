@@ -12,6 +12,8 @@ module BrowserReviewGate
       "status_context" => "browser-verification",
       "command" => "/browser-pr-verification",
       "workflow" => "browser-review-gate.yml",
+      # Who assesses a PR: claude-cli, anthropic, openai or gemini. Unset: chosen from the credentials.
+      "provider" => nil,
       "model" => nil,
       "claude_command" => nil,
       # How an agent starts and reaches the app for a browser run.

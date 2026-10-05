@@ -39,13 +39,46 @@ module BrowserReviewGate
       assert_empty github.writes
     end
 
-    def test_a_passing_run_on_the_assessed_commit_keeps_the_label_whatever_the_model_says
+    def test_a_run_that_passed_every_scenario_keeps_the_label
       github = FakeGitHub.new(comments: [ report_comment ], labels: [ "browser-verified" ])
+      model = FakeModel.new(answer)
 
-      assess(github, FakeModel.new(answer(covered_by_report: false)))
+      assess(github, model)
 
       assert_equal [ :create_comment ], github.writes.map(&:first)
       assert_includes github.writes.fetch(0).last, "report covers it"
+      cases = JSON.parse(model.requests.fetch(0)[:user][/<pull_request>\n(.*)\n<\/pull_request>/m, 1]).fetch("report_cases")
+      assert_equal [ "BROWSER-1" ], cases.map { |test_case| test_case["id"] }
+    end
+
+    def test_the_comment_lists_the_scenarios_and_ticks_the_ones_a_run_passed
+      github = FakeGitHub.new(comments: [ report_comment ])
+
+      assess(github, FakeModel.new(answer(scenarios: [ SIGN_IN, SETTINGS ])))
+
+      body = github.writes.fetch(0).last
+      assert_includes body, "- [x] `BROWSER-1` Sign in and land on the dashboard"
+      assert_includes body, "- [ ] `SETTINGS-1` Change a setting and see it kept"
+    end
+
+    def test_a_report_the_decision_has_not_judged_is_shown_to_the_model_once
+      github = FakeGitHub.new(comments: [ assessment_comment(scenarios: [ SETTINGS ], id: 7), report_comment ], labels: [ "browser-verified" ])
+      model = FakeModel.new(answer(scenarios: [ SETTINGS ]))
+
+      assess(github, model)
+      assert_equal 1, model.requests.size
+      assert_includes github.writes, [ :remove_label, "browser-verified" ]
+
+      assess(github, model)
+      assert_equal 1, model.requests.size
+    end
+
+    def test_a_report_from_someone_who_cannot_push_is_ignored
+      github = FakeGitHub.new(comments: [ report_comment({}, login: "stranger") ], labels: [ "browser-verified" ])
+
+      assess(github, FakeModel.new(answer))
+
+      assert_includes github.writes, [ :remove_label, "browser-verified" ]
     end
 
     def test_refreshes_its_comment_without_the_model_when_a_report_arrives_later
@@ -64,7 +97,7 @@ module BrowserReviewGate
     def test_removes_the_label_when_a_new_commit_is_not_covered_by_the_older_run
       github = FakeGitHub.new(comments: [ report_comment({ "tested_sha" => OLD }) ], labels: [ "browser-verified" ])
 
-      assess(github, FakeModel.new(answer(covered_by_report: false)))
+      assess(github, FakeModel.new(answer(scenarios: [ SIGN_IN, SETTINGS ])))
 
       assert_includes github.writes, [ :remove_label, "browser-verified" ]
     end
@@ -82,7 +115,7 @@ module BrowserReviewGate
     def test_keeps_the_label_when_the_model_finds_the_older_run_still_covers_a_new_commit
       github = FakeGitHub.new(comments: [ report_comment({ "tested_sha" => OLD }) ], labels: [ "browser-verified" ])
 
-      assess(github, FakeModel.new(answer(covered_by_report: true)))
+      assess(github, FakeModel.new(answer))
 
       refute_includes github.writes.map(&:first), :remove_label
     end

@@ -29,11 +29,13 @@ module BrowserReviewGate
   autoload :Hook, File.join(__dir__, "browser_review_gate/hook")
   autoload :Installer, File.join(__dir__, "browser_review_gate/installer")
   autoload :Markdown, File.join(__dir__, "browser_review_gate/markdown")
+  autoload :ModelApi, File.join(__dir__, "browser_review_gate/model_api")
   autoload :ModelClient, File.join(__dir__, "browser_review_gate/model_client")
   autoload :Prompts, File.join(__dir__, "browser_review_gate/prompts")
   autoload :Publisher, File.join(__dir__, "browser_review_gate/publisher")
   autoload :Report, File.join(__dir__, "browser_review_gate/report")
   autoload :SavedReport, File.join(__dir__, "browser_review_gate/saved_report")
   autoload :Shell, File.join(__dir__, "browser_review_gate/shell")
+  autoload :Stats, File.join(__dir__, "browser_review_gate/stats")
   autoload :Status, File.join(__dir__, "browser_review_gate/status")
 end

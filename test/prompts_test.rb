@@ -13,7 +13,7 @@ module BrowserReviewGate
 
       assert_includes prompt, "untrusted DATA"
       assert_includes prompt, "A cosmetic edit does not need one."
-      assert_includes prompt, "## Coverage"
+      assert_includes prompt, "## Scenarios"
       refute_includes prompt, "## Project rules"
     end
 
@@ -33,7 +33,7 @@ module BrowserReviewGate
       assert_includes prompt, "## Project rules"
       assert_includes prompt, "Run every scenario as an administrator and as a member."
       refute_includes prompt, "a hint"
-      assert_operator prompt.index("## Project rules"), :<, prompt.index("## Coverage")
+      assert_operator prompt.index("## Project rules"), :<, prompt.index("## Scenarios")
     end
 
     def test_an_ejected_policy_replaces_the_built_in_one_and_keeps_the_frame
@@ -46,7 +46,7 @@ module BrowserReviewGate
       assert_includes prompt, "Every change to a view needs a browser run"
       refute_includes prompt, "A cosmetic edit does not need one."
       assert_includes prompt, "untrusted DATA"
-      assert_includes prompt, "`covered_by_report`"
+      assert_includes prompt, "`report_cases`"
     end
 
     def test_an_ejected_playbook_belongs_to_the_project_and_survives_the_next_install

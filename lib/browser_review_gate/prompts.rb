@@ -49,21 +49,29 @@ module BrowserReviewGate
 
     PROJECT_RULES_NOTE = <<~TEXT.strip.freeze
       The maintainers of this repository wrote these rules for their application. They refine the
-      decision above and win where they disagree with it. Use the scenarios they name when you judge
-      whether an earlier report covers the change.
+      decision above and win where they disagree with it. Include the scenarios they name for the areas
+      the change touches.
     TEXT
 
     FRAME_TAIL = <<~TEXT.strip.freeze
-      ## Coverage
+      ## Scenarios
 
-      `covered_by_report` is true only when `report_cases` is present and those cases already exercise
-      every browser-visible behavior this pull request changes, including what the project rules require
-      for the areas it touches. Otherwise it is false. It is false when the decision is `not-required`.
+      When the decision is `required`, `scenarios` lists what a person must do in the browser to exercise
+      every behavior this pull request changes, including what the project rules require for the areas
+      it touches. One entry per scenario, at most 12, the fewest that cover the change. `name` says what
+      to do and what must be seen, in one sentence. `id` is a short label such as `SIGN-IN-1`: letters,
+      digits and hyphens.
+
+      When `report_cases` is present, those are the cases of an earlier browser run. If one of them
+      already exercises a scenario, give that scenario the `id` of that case, exactly. Give every other
+      scenario an `id` no case uses. Never reuse the `id` of a case that does not exercise the scenario.
+
+      When the decision is `not-required`, `scenarios` is an empty list.
 
       ## Reason
 
       `reason` is one plain sentence of at most 30 words. No links, mentions, code, or HTML. No company
-      or customer names.
+      or customer names. The same holds for scenario names.
     TEXT
 
     private

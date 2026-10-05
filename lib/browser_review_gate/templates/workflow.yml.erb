@@ -5,7 +5,7 @@
 # pull_request_target runs this file from the base branch. PR code is never checked out or
 # executed; the diff is read through the API as data.
 #
-# Setup: a CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret. Settings: .github/browser-review-gate.yml
+# Setup: one secret - CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY. Settings: .github/browser-review-gate.yml
 # A PR opened before this workflow existed is assessed on its next event; dispatch with pr_number
 # to assess it now.
 
@@ -13,7 +13,7 @@ name: Browser review gate
 
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize, review_requested, labeled]
+    types: [opened, reopened, synchronize, ready_for_review, review_requested, labeled]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -33,10 +33,12 @@ concurrency:
 
 jobs:
   gate:
+    # A draft is assessed when it is marked ready, or when someone asks by hand (workflow_dispatch).
     # Of all labels, only the two that open the gate matter: a published run and a waiver.
     if: >-
-      github.event.action != 'labeled' ||
-      contains(fromJSON('<%= JSON.generate(gate_labels) %>'), github.event.label.name)
+      (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft) &&
+      (github.event.action != 'labeled' ||
+      contains(fromJSON('<%= JSON.generate(gate_labels) %>'), github.event.label.name))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -65,5 +67,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
         run: browser-review-gate ci "$PR_NUMBER"

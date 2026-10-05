@@ -23,12 +23,43 @@ module BrowserReviewGate
     def test_new_cases_merge_with_earlier_ones_in_the_authors_own_comment
       github = FakeGitHub.new(comments: [ assessment_comment, report_comment({ "tested_sha" => OLD }, id: 9) ])
 
-      assert publisher(github, report_path: report_file("cases" => [ { "id" => "BROWSER-2", "name" => "Save", "result" => "pass" } ])).publish
+      assert publisher(github, report_path: report_file("cases" => [ browser_case("BROWSER-2", "Save") ])).publish
       kind, id, body = github.writes.fetch(0)
       assert_equal [ :update_comment, 9 ], [ kind, id ]
+      assert_includes body, "Save at /sign\\_in"
       cases = Report.data_from(body).fetch("cases")
       assert_equal %w[BROWSER-1 BROWSER-2], cases.map { |test_case| test_case["id"] }
       assert_equal OLD, cases.fetch(0).fetch("tested_sha")
+    end
+
+    def test_a_case_without_the_page_and_what_was_observed_is_refused
+      github = FakeGitHub.new(comments: [ assessment_comment ])
+      bare = { "id" => "BROWSER-1", "name" => "Sign in", "result" => "pass" }
+
+      [ bare, bare.merge("url" => "/sign_in"), bare.merge("url" => "the sign in page", "details" => "Fine.") ].each do |test_case|
+        error = assert_raises(Error) { publisher(github, report_path: report_file("cases" => [ test_case ])).publish }
+        assert_match(/case 1 (url|details)/, error.message)
+      end
+      assert_raises(Error) { publisher(github, report_path: report_file("cases" => [ bare ])).save }
+      assert_empty github.writes
+    end
+
+    def test_the_report_counts_the_runs_and_the_ones_that_found_a_failure
+      github = FakeGitHub.new(comments: [ assessment_comment ])
+
+      refute publisher(github, report_path: report_file("cases" => [ browser_case("BROWSER-1", "Sign in", result: "fail") ])).publish
+      assert publisher(github, report_path: report_file).publish
+
+      report = Report.latest(github.comments_list)
+      assert_equal [ 2, 1 ], [ report.runs, report.failed_runs ]
+    end
+
+    def test_cases_from_someone_who_cannot_push_are_not_carried_over
+      forged = report_comment({ "cases" => [ browser_case("FORGED-1", "Anything") ] }, login: "stranger")
+      github = FakeGitHub.new(comments: [ assessment_comment, forged ])
+
+      assert publisher(github, report_path: report_file).publish
+      assert_equal [ "BROWSER-1" ], Report.data_from(github.writes.fetch(0).last).fetch("cases").map { |test_case| test_case["id"] }
     end
 
     def test_scenarios_excluded_by_the_author_are_shown_in_the_report

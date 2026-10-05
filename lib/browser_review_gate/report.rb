@@ -1,3 +1,4 @@
+require "digest"
 require "json"
 
 module BrowserReviewGate
@@ -7,6 +8,7 @@ module BrowserReviewGate
     SHA_PATTERN = /\A\h{7,40}\z/
     CASE_ID_PATTERN = /\A[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\z/
     RESULTS = %w[pass fail].freeze
+    URL_PATTERN = %r{\A(?:https?://|/)\S*\z}
 
     attr_reader :errors
 
@@ -21,24 +23,32 @@ module BrowserReviewGate
       raise Error, "Existing browser verification report has a malformed data marker"
     end
 
-    # The newest passing report on the PR, or nil.
-    def self.latest_passing(comments)
+    # The newest report on the PR when it is well formed, or nil.
+    def self.latest(comments)
       comment = latest_comment(comments)
       report = comment && new(data_from(comment["body"]))
-      report if report&.passed?
+      report if report&.valid?
     rescue Error
       nil
     end
 
-    # Later results replace earlier ones case by case; cases that were not run again are kept.
+    # The newest report on the PR when it passes, or nil.
+    def self.latest_passing(comments)
+      report = latest(comments)
+      report if report&.passed?
+    end
+
+    # Later results replace earlier ones case by case; cases that were not run again are kept. The
+    # merged report counts the runs published on the PR and how many of them had a failing case.
     def self.merge(previous_data, latest_data)
       previous = new(previous_data)
       latest = new(latest_data)
-      return latest unless previous.valid? && latest.valid?
+      return latest unless latest.valid?
 
-      combined = previous.cases.to_h { |test_case| [ test_case["id"], test_case ] }
+      combined = previous.valid? ? previous.cases.to_h { |test_case| [ test_case["id"], test_case ] } : {}
       latest.cases.each { |test_case| combined[test_case["id"]] = test_case }
-      new(latest.to_h.merge("cases" => combined.values))
+      failed = latest.cases.all? { |test_case| test_case["result"] == "pass" } ? 0 : 1
+      new(latest.to_h.merge("cases" => combined.values, "runs" => previous.runs + 1, "failed_runs" => previous.failed_runs + failed))
     end
 
     def initialize(data)
@@ -53,7 +63,28 @@ module BrowserReviewGate
     def verified_by = @data["verified_by"]
     def cases = @data["cases"].is_a?(Array) ? @data["cases"] : []
     def excluded = @data["excluded"].is_a?(Array) ? @data["excluded"] : []
+    def runs = @data["runs"].is_a?(Integer) ? @data["runs"] : 0
+    def failed_runs = @data["failed_runs"].is_a?(Integer) ? @data["failed_runs"] : 0
     def to_h = JSON.parse(JSON.generate(@data))
+    def passed_ids = cases.select { |test_case| test_case["result"] == "pass" }.map { |test_case| test_case["id"] }
+
+    # Changes whenever a case is added, re-run or changes its outcome.
+    def fingerprint
+      Digest::SHA256.hexdigest(JSON.generate(cases.map { |test_case| test_case.values_at("id", "result", "tested_sha") }))[0, 16]
+    end
+
+    # What a newly submitted run must say about each case: where it was exercised and what was seen.
+    # Cases carried over from reports published before this was required are not checked.
+    def evidence_errors
+      cases.each_with_index.flat_map do |test_case, index|
+        next [] unless test_case.is_a?(Hash)
+
+        found = []
+        found << "case #{index + 1} url must be the page that was exercised: an http(s) URL or a path starting with /" unless url?(test_case["url"])
+        found << "case #{index + 1} details must say what was observed" unless text?(test_case["details"], 500)
+        found
+      end
+    end
 
     def passed?
       valid? && @data["coverage_complete"] && cases.all? { |test_case| test_case["result"] == "pass" }
@@ -122,6 +153,7 @@ module BrowserReviewGate
       errors << "case #{position} result must be pass or fail" unless RESULTS.include?(test_case["result"])
       errors << "case #{position} tested_sha must be a 7–40 character hexadecimal commit SHA" unless sha?(test_case["tested_sha"])
       errors << "case #{position} verified_by must be a non-empty string of at most 100 characters" unless text?(test_case["verified_by"], 100)
+      errors << "case #{position} url must be a string of at most 300 characters" unless test_case["url"].nil? || url?(test_case["url"])
       details = test_case["details"]
       errors << "case #{position} details must be a string of at most 500 characters" unless details.nil? || (details.is_a?(String) && details.length <= 500)
     end
@@ -140,10 +172,12 @@ module BrowserReviewGate
 
     def sha?(value) = value.is_a?(String) && SHA_PATTERN.match?(value)
     def text?(value, limit) = value.is_a?(String) && !value.strip.empty? && value.length <= limit
+    def url?(value) = value.is_a?(String) && value.length <= 300 && URL_PATTERN.match?(value)
 
     def markdown_case(test_case)
       detail = test_case["details"].to_s.empty? ? "" : ": #{Markdown.escape(test_case["details"])}"
-      "- #{test_case["result"].upcase} — #{Markdown.escape(test_case["name"])} (`#{test_case["id"]}`, tested " \
+      place = test_case["url"].to_s.empty? ? "" : " at #{Markdown.escape(test_case["url"])}"
+      "- #{test_case["result"].upcase} — #{Markdown.escape(test_case["name"])}#{place} (`#{test_case["id"]}`, tested " \
         "`#{test_case["tested_sha"]}` by #{Markdown.escape(test_case["verified_by"])})#{detail}"
     end
 

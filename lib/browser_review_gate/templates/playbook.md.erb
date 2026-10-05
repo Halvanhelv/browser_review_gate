@@ -15,10 +15,13 @@ This file is the playbook for the AI coding agent that does the run. The person 
    - `open_pull_request`: a run is saved and waits for the PR. Tell the person to open it.
    - `ask_to_start_app`: the app is not running. Do not start it yourself: ask the person to start it (`app.start_command` says how) and stop until they have.
    - `run_and_publish` or `run_and_save`: continue with step 2.
-2. Read the diff against the base branch and the earlier report in the PR, if any. Then read `<%= rules_path %>`: it says what this project always checks and which scenarios each area needs, and its rules are mandatory. List the scenarios for the behavior that changed, plus the ones the project rules require for the areas the change touches. Do not re-run behavior an earlier passing case still covers.
+2. Decide what to run.
+   - `scenarios` in the status output is the list CI wrote for this PR. Run every one of them, and give each case the `id` of its scenario. You may add cases of your own; you may not drop or rename one from the list.
+   - With no PR yet, or an empty list, choose the scenarios yourself: read the diff against the base branch, then `<%= rules_path %>`, which says what this project always checks and which scenarios each area needs. Its rules are mandatory. CI compares your cases with its own list once the PR is open and asks for what is missing.
+   - Do not re-run behavior an earlier passing case still covers.
 3. Open the running app in a browser tool. `app` in the status output gives the URL and a sign-in hint. Never start, restart or stop the app yourself: what runs on the person's machine is their decision. Use local test data and do not destroy existing data. If the app, the data, or a browser tool is missing, report the blocker. Reading code and running unit tests does not replace a browser run.
-4. Run every scenario end to end. After key actions check the page state, console errors, and failed requests. Record what you observed. A skipped or blocked scenario is not a pass.
-5. Write the report as JSON outside the repository (see the shape below). Set `coverage_complete` to true only when every scenario from step 2 ran.
+4. Run every scenario end to end. After key actions check the page state, console errors, and failed requests. For each case record the page it was exercised on (`url`) and what you observed there, including console errors and failed requests (`details`). A case without both is refused. A skipped or blocked scenario is not a pass.
+5. Write the report as JSON outside the repository (see the shape below). Set `coverage_complete` to true only when every scenario from step 2 ran. CI checks the report against its list by case `id`: a missing scenario takes the label away again.
 6. Publish or save, from the checkout that was tested, with everything committed and pushed:
    - PR exists: `browser-review-gate publish --report PATH` (add `--pr NUMBER` when the branch has several). It posts the cases with their outcomes. Only a complete all-pass report adds the `<%= label %>` label.
    - No PR yet: `browser-review-gate save --report PATH`. The run is published when the PR for this commit is opened. A new commit makes it stale.
@@ -36,7 +39,7 @@ Some scenarios cannot be exercised locally, for example a sign-in through an ext
   "tested_sha": "<full commit SHA that was tested>",
   "coverage_complete": true,
   "cases": [
-    { "id": "BROWSER-1", "name": "The changed interaction completes", "result": "pass", "details": "What was observed." }
+    { "id": "BROWSER-1", "name": "The changed interaction completes", "result": "pass", "url": "/the/page/exercised", "details": "What was observed, with console errors and failed requests if any." }
   ],
   "excluded": [
     { "name": "Sign-in through an external provider", "reason": "Needs a real provider account; covered by integration tests." }
@@ -44,7 +47,7 @@ Some scenarios cannot be exercised locally, for example a sign-in through an ext
 }
 ```
 
-`result` is `pass` or `fail`. `excluded` is optional: list a scenario there only when the person decided it stays outside the local run. Never exclude a scenario on your own to make the run complete. Keep customer and real company names out of the report.
+`result` is `pass` or `fail`. `url` is an http(s) URL or a path starting with `/`. `excluded` is optional: list a scenario there only when the person decided it stays outside the local run. Never exclude a scenario on your own to make the run complete. Keep customer and real company names out of the report.
 
 ## Rules
 

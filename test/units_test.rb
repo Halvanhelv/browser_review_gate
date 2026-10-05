@@ -5,7 +5,9 @@ module BrowserReviewGate
     include TestData
 
     def test_an_assessment_answer_that_is_malformed_is_invalid
-      [ "not json", answer(decision: "maybe"), answer(reason: "  "), answer(covered_by_report: "yes"), '["required"]' ].each do |text|
+      [ "not json", answer(decision: "maybe"), answer(reason: "  "), answer(scenarios: []), answer(scenarios: "all"),
+        answer(scenarios: [ { id: "has space", name: "x" } ]), answer(scenarios: [ SIGN_IN, SIGN_IN ]),
+        answer(scenarios: Array.new(13) { |index| { id: "S-#{index}", name: "x" } }), '["required"]' ].each do |text|
         refute Assessment.parse(text, assessed_sha: HEAD).valid?, text
       end
       refute Assessment.parse(answer, assessed_sha: "abc1234").valid?
@@ -78,6 +80,64 @@ module BrowserReviewGate
       assert_includes error.message, "Not logged in"
     end
 
+    def test_an_api_client_asks_each_provider_in_its_own_shape_and_returns_the_structured_answer
+      answer = JSON.generate(decision: "not-required")
+      replies = {
+        "anthropic" => { content: [ { type: "thinking", thinking: "" }, { type: "text", text: answer } ], stop_reason: "end_turn" },
+        "openai" => { choices: [ { message: { content: answer, refusal: nil } } ] },
+        "gemini" => { candidates: [ { content: { parts: [ { text: answer } ] } } ] }
+      }
+      with_env("ANTHROPIC_API_KEY" => "k", "OPENAI_API_KEY" => "k", "GEMINI_API_KEY" => "k") do
+        replies.each do |provider, reply|
+          seen = nil
+          transport = ->(url, headers, body) { seen = [ url, headers, body ] and [ "200", JSON.generate(reply) ] }
+          client = ModelApi.new(provider: provider, model: "some-model", transport: transport)
+
+          assert_equal({ "decision" => "not-required" }, JSON.parse(client.complete(system: "rules", user: "pr", schema: { type: "object" })), provider)
+          assert_includes JSON.generate(seen), "rules", provider
+          assert_includes JSON.generate(seen), "some-model", provider
+          refute seen.last.key?(:tools), provider
+        end
+
+        declined = ->(*) { [ "200", JSON.generate(stop_reason: "refusal", content: []) ] }
+        assert_raises(Error) { ModelApi.new(provider: "anthropic", transport: declined).complete(system: "", user: "", schema: {}) }
+        failed = ->(*) { [ "401", JSON.generate(error: { message: "bad key" }) ] }
+        error = assert_raises(Error) { ModelApi.new(provider: "openai", model: "m", transport: failed).complete(system: "", user: "", schema: {}) }
+        assert_includes error.message, "bad key"
+      end
+      assert_raises(Error) { ModelApi.new(provider: "gemini") }
+      assert_raises(Error) { ModelApi.new(provider: "other") }
+    end
+
+    def test_the_credentials_at_hand_choose_who_assesses_and_the_cli_stays_the_default
+      choose = ->(settings, environment) { ModelClient.for(Config.new(settings), environment: environment).class }
+
+      assert_equal ModelClient, choose.call({}, {})
+      assert_equal ModelClient, choose.call({}, { "ANTHROPIC_API_KEY" => "k", "OPENAI_API_KEY" => "k" })
+      assert_equal ModelApi, choose.call({ "model" => "m" }, { "OPENAI_API_KEY" => "k" })
+      assert_equal ModelApi, choose.call({ "provider" => "anthropic" }, { "CLAUDE_CODE_OAUTH_TOKEN" => "k" })
+    end
+
+    def test_stats_count_what_the_gate_did
+      github = FakeGitHub.new(comments: [ assessment_comment, report_comment({ "failed_runs" => 1, "runs" => 2 }) ])
+      github.define_singleton_method(:pull_requests_updated_since) do |_date|
+        [ { "number" => 1, "state" => "closed", "labels" => [ { "name" => "browser-verified" } ] }, { "number" => 2, "state" => "open", "labels" => [] } ]
+      end
+
+      counts = Stats.new(github: github).to_h(since: "2026-01-01")
+
+      assert_equal({ "pull_requests" => 2, "assessed" => 2, "required" => 2, "verified" => 1, "waived" => 0, "owed" => 1, "found_a_failure" => 2 }, counts)
+    end
+
+    def test_status_lists_the_scenarios_still_to_run
+      github = FakeGitHub.new(comments: [ assessment_comment(scenarios: [ SIGN_IN, SETTINGS ]), report_comment ])
+
+      status = Status.new(github: github, shell: FakeShell.new, probe: ->(_url) { true }).to_h(123)
+
+      assert_equal [ { "id" => "SETTINGS-1", "name" => "Change a setting and see it kept" } ], status.fetch("scenarios")
+      assert_equal "run_and_publish", status.fetch("next")
+    end
+
     def test_status_names_the_next_step
       shell = FakeShell.new
       status = ->(github) { Status.new(github: github, shell: shell, probe: ->(_url) { true }).to_h(123).fetch("next") }
@@ -103,6 +163,14 @@ module BrowserReviewGate
       stopped = status.call(false)
       assert_equal "ask_to_start_app", stopped.fetch("next")
       assert_equal false, stopped.dig("app", "running")
+    end
+
+    def with_env(values)
+      before = values.keys.to_h { |name| [ name, ENV[name] ] }
+      values.each { |name, value| ENV[name] = value }
+      yield
+    ensure
+      before.each { |name, value| ENV[name] = value }
     end
 
     def test_the_hook_publishes_a_saved_run_only_after_a_pr_was_opened

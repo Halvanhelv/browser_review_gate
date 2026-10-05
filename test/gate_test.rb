@@ -74,10 +74,26 @@ module BrowserReviewGate
     end
 
     def test_says_when_a_published_run_no_longer_covers_the_latest_commits
-      github = FakeGitHub.new(comments: [ assessment_comment, report_comment({ "tested_sha" => OLD }) ], reviewers: [ "reviewer" ])
+      github = FakeGitHub.new(comments: [ assessment_comment(scenarios: [ SIGN_IN, SETTINGS ]), report_comment({ "tested_sha" => OLD }) ],
+        labels: [ "browser-verified" ], reviewers: [ "reviewer" ])
 
       assert_equal :closed, enforce(github)
       assert_includes github.writes.last.last, "does not cover the latest commits"
+    end
+
+    def test_a_report_from_someone_who_cannot_push_does_not_open_review
+      github = FakeGitHub.new(comments: [ assessment_comment, report_comment({}, login: "stranger") ], labels: [ "browser-verified" ], reviewers: [ "reviewer" ])
+
+      assert_equal :closed, enforce(github)
+    end
+
+    def test_a_decision_written_before_scenarios_existed_still_counts
+      legacy = { "assessed_sha" => HEAD, "decision" => "required", "reason" => "A view changed.", "covered_by_report" => true }
+      body = "<!-- browser-verification-assessment:#{Marker.encode(JSON.generate(legacy))} -->"
+      comment = { "id" => 1, "body" => body, "user" => { "login" => Assessment::AUTHOR } }
+      github = FakeGitHub.new(comments: [ comment, report_comment({ "tested_sha" => OLD }) ], labels: [ "browser-verified" ], reviewers: [ "reviewer" ])
+
+      assert_equal :open, enforce(github)
     end
 
     def test_a_label_without_a_passing_report_does_not_open_review

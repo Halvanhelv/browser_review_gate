@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0
+
+Re-run `browser-review-gate install` after updating: the workflow and the playbook change.
+
+- CI names the scenarios a browser run must pass and writes them in the PR comment. `status` hands them
+  to the agent, and each case is reported under its scenario's id. A run that leaves one out does not
+  open review, whatever `coverage_complete` says. Runs made before the PR existed are matched against
+  the list when CI first sees them.
+- Every submitted case must say where it was exercised (`url`) and what was observed (`details`).
+  Reports already published are not affected.
+- A browser report counts only from someone who can push to the repository.
+- Draft PRs are not assessed until they are marked ready for review. `request-assessment` still
+  assesses a draft on demand.
+- The assessment can run on the OpenAI or Gemini API, or on the Anthropic API without the Claude Code
+  CLI: see `provider` and `model` in the settings file. Nothing changes for a project that keeps its
+  `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` secret.
+- `stats` counts what the gate did on recent PRs: how many needed a run, were verified, were waived,
+  still owe one, and had a run that found a failing case.
+- Commands find the settings and the rules from any directory of the repository.
+
 ## 0.1.2
 
 - Nothing holds a command back any more. The before-command hooks of 0.1.1, which stopped

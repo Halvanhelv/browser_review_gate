@@ -6,6 +6,12 @@ url:<%= url ? " #{url.inspect}" : "" %>
 # How to sign in locally, e.g. "use the seed account from db/seeds.rb". No real credentials here.
 sign_in:
 
+# Who assesses a PR in CI. Unset: the Claude Code CLI with a CLAUDE_CODE_OAUTH_TOKEN or
+# ANTHROPIC_API_KEY secret; with only an OPENAI_API_KEY or GEMINI_API_KEY secret, that provider's API.
+# Set `provider` to claude-cli, anthropic, openai or gemini to choose; openai and gemini need `model`.
+provider:
+model:
+
 # Workflow file name under .github/workflows, used to request an assessment by hand.
 workflow: <%= workflow %>
 

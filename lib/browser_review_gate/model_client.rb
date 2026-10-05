@@ -9,6 +9,22 @@ module BrowserReviewGate
     NPX = %w[npx --yes @anthropic-ai/claude-code@2.1.288].freeze
     CREDENTIALS = %w[CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY].freeze
 
+    # The client the project's settings and the credentials at hand call for. The Claude Code CLI stays
+    # the default; an OpenAI or Gemini key alone selects that provider's API.
+    def self.for(config, environment: ENV)
+      provider = config.provider || detect(config, environment)
+      return new(command: config.claude_command, model: config.model) if provider == "claude-cli"
+
+      ModelApi.new(provider: provider, model: config.model)
+    end
+
+    def self.detect(config, environment)
+      set = ->(name) { !environment[name].to_s.empty? }
+      return "claude-cli" if config.claude_command || CREDENTIALS.any?(&set)
+
+      ModelApi::PROVIDERS.keys.find { |provider| set.call(ModelApi::PROVIDERS.fetch(provider).fetch(:key)) } || "claude-cli"
+    end
+
     # `runner` takes the environment, argv and stdin, and returns [stdout, stderr, success?].
     def initialize(command: nil, model: nil, runner: nil)
       @command = command.to_s.empty? ? default_command : command.split

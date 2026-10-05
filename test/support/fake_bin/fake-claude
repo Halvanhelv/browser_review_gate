@@ -5,8 +5,11 @@ require "json"
 File.write(ENV.fetch("FAKE_CLAUDE_LOG"), "called\n", mode: "a")
 prompt = $stdin.read
 required = prompt.include?("app\\/views\\/")
+# One scenario per changed view; the ids are the ones the tests' reports use.
+scenarios = { "home.erb" => "BROWSER-1", "settings.erb" => "BROWSER-2" }
+  .select { |file, _id| prompt.include?(file) }.map { |file, id| { id: id, name: "Exercise #{file}" } }
 puts JSON.generate(is_error: false, structured_output: {
   decision: required ? "required" : "not-required",
   reason: required ? "A view changed." : "Nothing a browser shows changed.",
-  covered_by_report: false
+  scenarios: required ? scenarios : []
 })

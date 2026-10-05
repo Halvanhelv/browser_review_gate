@@ -16,7 +16,7 @@ module BrowserReviewGate
     # Returns :open when review may proceed and :closed when it waits for a browser run.
     def enforce(number)
       pull_request = @github.pull_request(number)
-      comments = @github.comments(number)
+      comments = @github.trusted_comments(number)
       head_sha = pull_request.fetch("head").fetch("sha")
       assessment = Assessment.latest(comments)
       assessment = nil unless assessment&.for?(head_sha)
@@ -39,7 +39,7 @@ module BrowserReviewGate
       return [ :open, "Browser verification waived by #{waived_by}." ] if waived_by
       return [ :closed, "The browser-testing assessment for this commit is not available." ] unless assessment
       return [ :open, "Browser verification is not needed." ] unless assessment.required?
-      return [ :open, "Required browser cases are verified." ] if verified?(pull_request, comments)
+      return [ :open, "Required browser cases are verified." ] if verified?(pull_request, comments, assessment)
 
       [ :closed, "Browser run needed: #{@config.command} #{number}" ]
     end
@@ -48,8 +48,8 @@ module BrowserReviewGate
       pull_request.fetch("labels").any? { |entry| entry["name"] == label }
     end
 
-    def verified?(pull_request, comments)
-      labelled?(pull_request, @config.label) && !Report.latest_passing(comments).nil?
+    def verified?(pull_request, comments, assessment)
+      labelled?(pull_request, @config.label) && assessment.covered_by?(Report.latest(comments))
     end
 
     # A waiver counts only from someone other than the author, unless the project allows otherwise.
@@ -127,8 +127,8 @@ module BrowserReviewGate
     def notice(number, assessment, comments)
       return "Review request paused. The browser-testing assessment for this commit is not available. Request review again to retry it." unless assessment
 
-      outdated = !Report.latest_passing(comments).nil?
-      missing = outdated ? "the published browser run does not cover the latest commits" :
+      report = Report.latest_passing(comments)
+      missing = report && !assessment.covered_by?(report) ? "the published browser run does not cover the latest commits" :
                            "no successful local browser run has been published yet"
       "Review request paused. Browser testing is required for this change, and #{missing}. " \
         "Run `#{@config.command} #{number}` in your AI coding agent from the PR branch."

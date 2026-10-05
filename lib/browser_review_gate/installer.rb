@@ -192,7 +192,7 @@ module BrowserReviewGate
     def next_steps
       <<~TEXT
         Next:
-          1. Add a CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret to the repository.
+          1. Add one secret to the repository: CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY.
           2. Fill start_command, url and sign_in in #{Config::PATH}.
           3. Describe what this application always checks in #{Prompts::RULES}.
           4. Commit and merge to the default branch: the workflow runs from there.

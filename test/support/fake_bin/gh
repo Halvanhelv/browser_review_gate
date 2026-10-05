@@ -26,6 +26,7 @@ in [ "api", "user", "--jq", ".login" ] then puts login
 in [ "api", "--paginate", "--slurp", path ] if path.include?("/comments") then puts JSON.generate([ state["comments"] ])
 in [ "api", "--paginate", "--slurp", path ] if path.include?("/files") then puts JSON.generate([ state["files"] ])
 in [ "api", "-X", "GET", path ] if path.end_with?("/pulls/7") then puts JSON.generate(pull.call)
+in [ "api", "-X", "GET", path ] if path.end_with?("/permission") then puts JSON.generate(permission: "write")
 in [ "api", "-X", "GET", path ] if path.include?("/commits/") then puts JSON.generate(author: { login: "dev-user" })
 in [ "api", "-X", "DELETE", path ] if path.include?("/issues/comments/")
   state["comments"].reject! { |comment| comment["id"] == path.split("/").last.to_i }

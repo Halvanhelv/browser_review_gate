@@ -137,7 +137,7 @@ module BrowserReviewGate
     def report(case_id, coverage_complete: true)
       path = File.join(@tmp, "#{case_id}.json")
       File.write(path, JSON.generate(tested_sha: head, coverage_complete: coverage_complete,
-        cases: [ { id: case_id, name: "Scenario #{case_id}", result: "pass" } ]))
+        cases: [ { id: case_id, name: "Scenario #{case_id}", result: "pass", url: "/", details: "The page showed the change." } ]))
       path
     end
 

@@ -16,7 +16,8 @@ module BrowserReviewGate
     attr_accessor :branch_pr
 
     def initialize(head: HEAD, labels: [], comments: [], files: nil, reviewers: [], teams: [], author: "dev-user",
-      branch: "feature/thing", login: "dev-user", label_actors: {}, commit_author: nil)
+      branch: "feature/thing", login: "dev-user", label_actors: {}, commit_author: nil, writers: [ "dev-user" ])
+      @writers = writers
       @label_actors = label_actors
       @commit_author = commit_author
       @statuses = []
@@ -38,6 +39,10 @@ module BrowserReviewGate
     def login = @login
     def files(_number) = @files
     def comments(_number) = @comments_list
+
+    def trusted_comments(_number)
+      @comments_list.reject { |comment| comment["body"].to_s.match?(Report::MARKER) && !@writers.include?(comment.dig("user", "login")) }
+    end
     def pull_request_number_for_branch = @branch_pr
 
     def pull_request(_number)
@@ -136,18 +141,28 @@ module BrowserReviewGate
 
   module TestData
     def answer(overrides = {})
-      JSON.generate({ decision: "required", reason: "The change alters the home page.", covered_by_report: false }.merge(overrides))
+      data = { decision: "required", reason: "The change alters the home page.", scenarios: [ SIGN_IN ] }.merge(overrides)
+      data[:scenarios] = [] if data[:decision] == "not-required"
+      JSON.generate(data)
     end
 
-    def assessment_comment(decision: "required", sha: HEAD, covered: false, verified: false, id: 1, login: Assessment::AUTHOR)
-      body = Assessment.parse(answer(decision: decision, covered_by_report: covered), assessed_sha: sha)
+    # The scenario the default report case exercises.
+    SIGN_IN = { id: "BROWSER-1", name: "Sign in and land on the dashboard" }.freeze
+    SETTINGS = { id: "SETTINGS-1", name: "Change a setting and see it kept" }.freeze
+
+    def assessment_comment(decision: "required", sha: HEAD, scenarios: [ SIGN_IN ], report_seen: nil, verified: false, id: 1, login: Assessment::AUTHOR)
+      body = Assessment.parse(answer(decision: decision, scenarios: scenarios), assessed_sha: sha, report_seen: report_seen)
         .markdown(verified: verified, command: "/browser-pr-verification 123")
       { "id" => id, "body" => body, "user" => { "login" => login } }
     end
 
     def report_data(overrides = {})
       { "tested_sha" => HEAD, "coverage_complete" => true,
-        "cases" => [ { "id" => "BROWSER-1", "name" => "Sign in", "result" => "pass" } ] }.merge(overrides)
+        "cases" => [ browser_case("BROWSER-1", "Sign in") ] }.merge(overrides)
+    end
+
+    def browser_case(id, name, result: "pass")
+      { "id" => id, "name" => name, "result" => result, "url" => "/sign_in", "details" => "The page showed what the scenario expects." }
     end
 
     def report_comment(overrides = {}, id: 9, login: "dev-user")

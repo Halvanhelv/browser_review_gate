@@ -30,7 +30,7 @@ module BrowserReviewGate
       actor = @github.login
       data["verified_by"] = "AI browser agent (run by #{actor})"
 
-      comments = @github.comments(number)
+      comments = @github.trusted_comments(number)
       ensure_browser_run_wanted!(number, comments, local_sha)
       report = merged_report(data, comments)
 
@@ -54,7 +54,7 @@ module BrowserReviewGate
       data = read_report_file
       ensure_report_sha!(data, local_sha)
       report = Report.new(data.merge("verified_by" => "pending"))
-      raise Error, report.errors.join("; ") unless report.valid?
+      ensure_acceptable!(report)
 
       saved_report = SavedReport.new(sha: local_sha, shell: @shell)
       saved_report.write(data)
@@ -107,13 +107,19 @@ module BrowserReviewGate
 
     def merged_report(data, comments)
       submitted = Report.new(data)
-      raise Error, submitted.errors.join("; ") unless submitted.valid?
+      ensure_acceptable!(submitted)
 
       prior = Report.latest_comment(comments)
       report = Report.merge(prior ? Report.data_from(prior["body"]) : {}, submitted.to_h)
       raise Error, report.errors.join("; ") unless report.valid?
 
       report
+    end
+
+    # A run is taken only with the evidence of each case: the page and what was observed there.
+    def ensure_acceptable!(report)
+      problems = report.valid? ? report.evidence_errors : report.errors
+      raise Error, problems.join("; ") if problems.any?
     end
 
     def body(report, complete)

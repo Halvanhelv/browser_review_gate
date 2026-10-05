@@ -8,7 +8,8 @@ module BrowserReviewGate
     RUN_STEPS = %w[run_and_publish run_and_save].freeze
 
     # `probe` takes the app URL and says whether something answers there.
-    def initialize(github:, config: Config.new, shell: Shell.new, probe: nil)
+    def initialize(github:, config: Config.new, shell: Shell.new, probe: nil, prompts: Prompts.new)
+      @prompts = prompts
       @github = github
       @config = config
       @shell = shell
@@ -17,7 +18,7 @@ module BrowserReviewGate
 
     def to_h(number = nil)
       result = facts(number)
-      result["project_rules"] = Prompts::RULES if Prompts.new.rules
+      result["project_rules"] = Prompts::RULES if @prompts.rules
       result["app"] = app
       # The agent never starts the app itself: a person decides what runs on their machine.
       result["next"] = "ask_to_start_app" if RUN_STEPS.include?(result["next"]) && result["app"]["running"] == false
@@ -33,16 +34,19 @@ module BrowserReviewGate
       return { "pull_request" => nil, "local_head" => local_sha, "saved_run" => saved, "next" => saved ? "open_pull_request" : "run_and_save" } unless number
 
       pull_request = @github.pull_request(number)
-      comments = @github.comments(number)
+      comments = @github.trusted_comments(number)
       head_sha = pull_request.fetch("head").fetch("sha")
       assessment = Assessment.latest(comments)
       assessment = nil unless assessment&.for?(head_sha)
       labels = pull_request.fetch("labels").map { |label| label["name"] }
-      verified = labels.include?(@config.label) && !Report.latest_passing(comments).nil?
+      report = Report.latest(comments)
+      verified = labels.include?(@config.label) && (assessment ? assessment.covered_by?(report) : report&.passed? == true)
       waived = labels.include?(@config.waiver_label)
 
       { "pull_request" => number, "pr_head" => head_sha, "local_head" => local_sha,
-        "decision" => assessment&.decision, "reason" => assessment&.reason, "verified" => verified, "waived" => waived,
+        "decision" => assessment&.decision, "reason" => assessment&.reason,
+        # What the run must exercise; each id is the `id` of the case that reports it.
+        "scenarios" => assessment ? assessment.outstanding(report) : [], "verified" => verified, "waived" => waived,
         "saved_run" => saved, "next" => next_step(assessment, verified || waived, saved, head_sha == local_sha) }
     end
 

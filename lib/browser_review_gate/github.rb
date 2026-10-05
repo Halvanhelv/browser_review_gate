@@ -27,6 +27,30 @@ module BrowserReviewGate
       pages("repos/#{repository}/issues/#{number}/comments")
     end
 
+    # Comments without browser reports from people who cannot push to the repository: anyone may
+    # comment on a public PR, and a report is only worth what its author is trusted with.
+    def trusted_comments(number)
+      comments(number).reject { |comment| comment["body"].to_s.match?(Report::MARKER) && !writer?(comment.dig("user", "login")) }
+    end
+
+    def writer?(login)
+      @writers ||= {}
+      return @writers[login] if @writers.key?(login)
+
+      @writers[login] = %w[admin maintain write].include?(api("repos/#{repository}/collaborators/#{login}/permission")["permission"])
+    rescue Error
+      @writers[login] = false
+    end
+
+    # Pull requests touched on or after `date` (YYYY-MM-DD), open or closed.
+    def pull_requests_updated_since(date)
+      output = @shell.call("gh", "api", "--paginate", "--slurp", "-X", "GET", "search/issues",
+        "-f", "q=repo:#{repository} is:pr updated:>=#{date}", "-f", "per_page=100")
+      JSON.parse(output).flat_map { |page| page.fetch("items") }
+    rescue JSON::ParserError, KeyError
+      raise Error, "gh returned output that is not a pull request list"
+    end
+
     def files(number)
       pages("repos/#{repository}/pulls/#{number}/files")
     end
