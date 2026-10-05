@@ -26,6 +26,13 @@ module BrowserReviewGate
       assert_includes github.writes.last.last, "Run `/browser-pr-verification 123`"
     end
 
+    def test_says_when_a_published_run_no_longer_covers_the_latest_commits
+      github = FakeGitHub.new(comments: [ assessment_comment, report_comment({ "tested_sha" => OLD }) ], reviewers: [ "reviewer" ])
+
+      assert_equal :closed, enforce(github)
+      assert_includes github.writes.last.last, "does not cover the latest commits"
+    end
+
     def test_a_label_without_a_passing_report_does_not_open_review
       github = FakeGitHub.new(comments: [ assessment_comment, report_comment({ "coverage_complete" => false }) ],
         labels: [ "browser-verified" ], reviewers: [ "reviewer" ])

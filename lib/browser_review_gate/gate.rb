@@ -43,16 +43,21 @@ module BrowserReviewGate
 
       @github.remove_reviewers(number, reviewers: reviewers, team_reviewers: teams)
       marker = "<!-- browser-review-gate:#{head_sha} -->"
-      @github.create_comment(number, "#{marker}\n#{notice(number, assessment)}") unless comments.any? { |comment| comment["body"].to_s.include?(marker) }
+      unless comments.any? { |comment| comment["body"].to_s.include?(marker) }
+        outdated = !Report.latest_passing(comments).nil?
+        @github.create_comment(number, "#{marker}\n#{notice(number, assessment, outdated)}")
+      end
       @log.puts "Took back reviewer requests until browser verification is available."
       :closed
     end
 
-    def notice(number, assessment)
+    # `outdated` is true when a passing run exists but no longer covers the latest commits.
+    def notice(number, assessment, outdated)
       if assessment
-        "Review request paused. Browser testing is required for this change, and no successful local browser run " \
-          "has been published yet. Run `#{@config.command} #{number}` in your AI coding agent from the PR branch, " \
-          "then request review again."
+        missing = outdated ? "the published browser run does not cover the latest commits" :
+                             "no successful local browser run has been published yet"
+        "Review request paused. Browser testing is required for this change, and #{missing}. " \
+          "Run `#{@config.command} #{number}` in your AI coding agent from the PR branch, then request review again."
       else
         "Review request paused. The browser-testing assessment for this commit is not available. " \
           "Request review again to retry it."
