@@ -35,11 +35,11 @@ module BrowserReviewGate
       settings = JSON.parse(read(".claude/settings.json"))
       assert_equal "lint", settings.dig("hooks", "Stop", 0, "hooks", 0, "command")
       assert_includes settings.dig("hooks", "PostToolUse", 0, "hooks", 0, "command"), "browser-review-gate hook claude || true"
-      assert_includes settings.dig("hooks", "PreToolUse", 0, "hooks", 0, "command"), "browser-review-gate hook claude --before || true"
+      refute settings.fetch("hooks").key?("PreToolUse")
       cursor = JSON.parse(read(".cursor/hooks.json")).fetch("hooks")
       assert_includes cursor.dig("afterShellExecution", 0, "command"), "browser-review-gate hook cursor || true"
-      assert_includes cursor.dig("beforeShellExecution", 0, "command"), "browser-review-gate hook cursor --before || true"
-      assert_includes JSON.parse(read(".codex/hooks.json")).dig("hooks", "PreToolUse", 0, "hooks", 0, "command"), "hook codex --before"
+      refute cursor.key?("beforeShellExecution")
+      assert_includes JSON.parse(read(".codex/hooks.json")).dig("hooks", "PostToolUse", 0, "hooks", 0, "command"), "hook codex || true"
       assert_includes workflow, "labeled"
       assert_includes workflow, %(fromJSON('["browser-verified","browser-verification-waived"]'))
 
@@ -63,14 +63,25 @@ module BrowserReviewGate
       assert_equal 1, read("AGENTS.md").scan("browser_review_gate:start").size
     end
 
-    def test_an_install_made_by_an_older_version_gains_the_before_hook_only
-      touch(".claude/settings.json", JSON.generate(hooks: { PostToolUse: [ { matcher: "Bash", hooks: [ { type: "command", command: "browser-review-gate hook claude" } ] } ] }))
+    def test_the_before_hooks_of_version_0_1_1_are_removed_and_other_hooks_are_kept
+      before = "command -v browser-review-gate >/dev/null 2>&1 && browser-review-gate hook claude --before || true"
+      after = "command -v browser-review-gate >/dev/null 2>&1 && browser-review-gate hook claude || true"
+      touch(".claude/settings.json", JSON.generate(hooks: {
+        PreToolUse: [ { matcher: "Bash", hooks: [ { type: "command", command: before } ] }, { matcher: "Write", hooks: [ { type: "command", command: "guard" } ] } ],
+        PostToolUse: [ { matcher: "Bash", hooks: [ { type: "command", command: after } ] } ]
+      }))
+      touch(".cursor/hooks.json", JSON.generate(version: 1, hooks: {
+        beforeShellExecution: [ { command: before.sub("claude", "cursor") } ], afterShellExecution: [ { command: after.sub("claude", "cursor") } ]
+      }))
 
-      installer(agents: [ "claude" ]).install
+      installer(agents: %w[claude cursor]).install
 
       hooks = JSON.parse(read(".claude/settings.json")).fetch("hooks")
+      assert_equal [ "guard" ], hooks.fetch("PreToolUse").map { |entry| entry.dig("hooks", 0, "command") }
       assert_equal 1, hooks.fetch("PostToolUse").size
-      assert_equal 1, hooks.fetch("PreToolUse").size
+      cursor = JSON.parse(read(".cursor/hooks.json")).fetch("hooks")
+      refute cursor.key?("beforeShellExecution")
+      assert_equal 1, cursor.fetch("afterShellExecution").size
     end
 
     def test_ci_can_take_the_gem_from_a_git_repository

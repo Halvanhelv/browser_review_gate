@@ -110,25 +110,23 @@ module BrowserReviewGate
 
     def install_claude
       managed(".claude/skills/browser-pr-verification/SKILL.md", render("claude_skill.md"))
-      add_hooks(".claude/settings.json", "claude") do |hooks, command, before|
-        (hooks[before ? "PreToolUse" : "PostToolUse"] ||= []) <<
-          { "matcher" => "Bash", "hooks" => [ { "type" => "command", "command" => command, "timeout" => 60 } ] }
+      add_hook(".claude/settings.json", "claude", %w[PreToolUse]) do |hooks, command|
+        (hooks["PostToolUse"] ||= []) << { "matcher" => "Bash", "hooks" => [ { "type" => "command", "command" => command, "timeout" => 60 } ] }
       end
     end
 
     def install_cursor
       managed(".cursor/commands/browser-pr-verification.md", render("cursor_command.md"))
-      add_hooks(".cursor/hooks.json", "cursor", "version" => 1) do |hooks, command, before|
-        (hooks[before ? "beforeShellExecution" : "afterShellExecution"] ||= []) << { "command" => command }
+      add_hook(".cursor/hooks.json", "cursor", %w[beforeShellExecution], "version" => 1) do |hooks, command|
+        (hooks["afterShellExecution"] ||= []) << { "command" => command }
       end
     end
 
     # Codex runs a project hook only after the person trusts it in /hooks, so the AGENTS.md section also
     # tells the agent to publish after it opens the PR.
     def install_codex
-      add_hooks(".codex/hooks.json", "codex") do |hooks, command, before|
-        (hooks[before ? "PreToolUse" : "PostToolUse"] ||= []) <<
-          { "matcher" => "^Bash$", "hooks" => [ { "type" => "command", "command" => command, "timeout" => 60 } ] }
+      add_hook(".codex/hooks.json", "codex", %w[PreToolUse]) do |hooks, command|
+        (hooks["PostToolUse"] ||= []) << { "matcher" => "^Bash$", "hooks" => [ { "type" => "command", "command" => command, "timeout" => 60 } ] }
       end
       path = "AGENTS.md"
       current = exist?(path) ? File.read(File.join(@root, path)) : nil
@@ -139,8 +137,8 @@ module BrowserReviewGate
 
     # A machine without the gem (a cloud agent, a fresh container) must not see a failing hook after
     # every command.
-    def hook_command(agent, before)
-      "command -v browser-review-gate >/dev/null 2>&1 && #{HOOK} #{agent}#{" --before" if before} || true"
+    def hook_command(agent)
+      "command -v browser-review-gate >/dev/null 2>&1 && #{HOOK} #{agent} || true"
     end
 
     def render(name)
@@ -161,14 +159,22 @@ module BrowserReviewGate
       write(path, content, current)
     end
 
-    # Adds the after-command and before-command hook entries the file does not have yet.
-    def add_hooks(path, agent, defaults = {})
+    # Adds the after-command hook entry when the file lacks it, and removes the before-command entries
+    # version 0.1.1 put under `stale_events`: nothing holds a command back any more.
+    def add_hook(path, agent, stale_events, defaults = {})
       current = exist?(path) ? File.read(File.join(@root, path)) : nil
-      missing = [ false, true ].reject { |before| current.to_s.match?(before ? /hook #{agent} --before/ : /hook #{agent}(?! --before)/) }
-      return @log.puts("  unchanged #{path}") if missing.empty?
+      present = current.to_s.match?(/hook #{agent}(?! --before)/)
+      return @log.puts("  unchanged #{path}") if present && !current.include?("hook #{agent} --before")
 
       settings = defaults.merge(current ? JSON.parse(current) : {})
-      missing.each { |before| yield(settings["hooks"] ||= {}, hook_command(agent, before), before) }
+      hooks = (settings["hooks"] ||= {})
+      stale_events.each do |event|
+        next unless hooks[event]
+
+        hooks[event].reject! { |entry| JSON.generate(entry).include?("hook #{agent} --before") }
+        hooks.delete(event) if hooks[event].empty?
+      end
+      yield(hooks, hook_command(agent)) unless present
       write(path, "#{JSON.pretty_generate(settings)}\n", current)
     end
 

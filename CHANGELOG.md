@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+- Nothing holds a command back any more. The before-command hooks of 0.1.1, which stopped
+  `gh pr create` and review requests while a run was owed, are removed: running the verification is
+  the author's choice, and only CI decides whether a review request stays. The installer deletes the
+  old hook entries; until then they do nothing.
+
 ## 0.1.1
 
 - Reviewers whose requests were taken back are asked again automatically once the run is published.

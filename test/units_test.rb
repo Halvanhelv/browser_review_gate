@@ -105,24 +105,6 @@ module BrowserReviewGate
       assert_equal false, stopped.dig("app", "running")
     end
 
-    def test_before_a_command_the_hook_says_when_a_run_is_owed
-      shell = FakeShell.new(changed: [ "app/views/home.erb" ])
-      owed = FakeGitHub.new(comments: [ assessment_comment ])
-      hook = ->(github, sh = shell) { Hook.new(publisher_factory: -> { }, status_factory: -> { Status.new(github: github, shell: sh, probe: ->(_url) { true }) }, shell: sh) }
-
-      assert_nil hook.call(owed).before('{"command":"ls"}')
-      assert_includes hook.call(owed).before('{"command":"gh pr create --title x"}'), "No browser run is saved"
-      assert_nil hook.call(owed).before('{"command":"BROWSER_REVIEW_GATE_SKIP=1 gh pr create --title x"}')
-      assert_nil hook.call(owed, FakeShell.new(changed: [ "README.md", "docs/a.md" ])).before('{"command":"gh pr create"}')
-      assert_includes hook.call(owed).before('{"command":"gh pr edit 123 --add-reviewer someone"}'), "needs a browser run"
-      cleared = FakeGitHub.new(comments: [ assessment_comment(decision: "not-required") ])
-      assert_nil hook.call(cleared).before('{"command":"gh pr edit 123 --add-reviewer someone"}')
-
-      message = "wait"
-      assert_equal "deny", JSON.parse(Hook.render(message, "claude", before: true)).dig("hookSpecificOutput", "permissionDecision")
-      assert_equal "deny", JSON.parse(Hook.render(message, "cursor", before: true)).fetch("permission")
-    end
-
     def test_the_hook_publishes_a_saved_run_only_after_a_pr_was_opened
       shell = FakeShell.new
       github = FakeGitHub.new

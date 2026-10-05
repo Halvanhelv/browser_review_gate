@@ -84,7 +84,7 @@ Local commands need the `gh` CLI, signed in.
 - **Reviewers come back on their own.** A request taken back is remembered; once the run is published, the same people are asked again.
 - **A waiver for what cannot be run.** Someone other than the author adds the `browser-verification-waived` label and review proceeds without a run.
 - **A status next to the checks.** `browser-verification` is pending while a run is owed and green otherwise. Make it a required check if you want it to block merging.
-- **A reminder before the PR.** In Claude Code, Cursor and Codex, `gh pr create` and review requests are held with a message when a run is still owed. The agent runs the verification first, or repeats the command with `BROWSER_REVIEW_GATE_SKIP=1` when the person says to go ahead.
+- **Nothing is forced.** Opening a PR never requires a run. The PR comment says when one is needed and how to do it; it only becomes necessary when the author wants a reviewer.
 - **The agent does not start your app.** It uses the one that is running and asks you to start it otherwise.
 
 ## What it does not do

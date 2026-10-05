@@ -74,16 +74,11 @@ module BrowserReviewGate
       assert_includes output, "waived by lead"
     end
 
-    def test_before_opening_a_pr_the_hook_asks_for_a_run_and_lets_a_saved_one_through
-      update_state("open" => false)
+    def test_nothing_holds_a_pr_back_and_an_old_before_hook_entry_is_a_silent_no_op
       payload = JSON.generate(tool_input: { command: "gh pr create --title x" })
 
-      denied = JSON.parse(run!("hook", "claude", "--before", stdin: payload))
-      assert_equal "deny", denied.dig("hookSpecificOutput", "permissionDecision")
-      assert_includes denied.dig("hookSpecificOutput", "permissionDecisionReason"), "/browser-pr-verification"
-
-      run!("save", "--report", report("BROWSER-1"))
       assert_equal "", run!("hook", "claude", "--before", stdin: payload)
+      assert_equal "", run!("hook", "claude", stdin: payload)
     end
 
     def test_a_pr_that_cannot_touch_the_browser_is_cleared_without_the_model

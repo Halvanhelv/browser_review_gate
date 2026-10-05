@@ -16,7 +16,6 @@ module BrowserReviewGate
         save --report PATH                        keep results until the PR for this commit is opened
         request-assessment NUMBER                 ask CI to assess a PR that has no decision yet
         hook AGENT                                after a command: publish the saved run after `gh pr create`
-        hook AGENT --before                       before a command: say when a browser run is still owed
 
       For CI
         ci NUMBER                                 assess the PR and take back premature reviewer requests
@@ -118,13 +117,14 @@ module BrowserReviewGate
       0
     end
 
+    # Version 0.1.1 installed a `--before` hook that held commands back. It is gone; a project that
+    # still has the entry gets a silent no-op until the installer removes it.
     def hook
-      before = !@argv.delete("--before").nil?
+      return 0 if @argv.delete("--before")
+
       agent = @argv.shift
-      hook = Hook.new(publisher_factory: -> { Publisher.new(github: github, config: config) },
-        status_factory: -> { Status.new(github: github, config: config) }, config: config)
-      message = before ? hook.before(@stdin.read) : hook.after(@stdin.read)
-      output = Hook.render(message, agent, before: before)
+      message = Hook.new(publisher_factory: -> { Publisher.new(github: github, config: config) }).after(@stdin.read)
+      output = Hook.render(message, agent)
       @stdout.puts output if output
       0
     end
