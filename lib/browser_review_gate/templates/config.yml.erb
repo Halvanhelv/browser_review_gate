@@ -1,6 +1,6 @@
 # Settings for browser_review_gate. Every key is optional.
 
-# How an AI coding agent starts and reaches the app for a browser run.
+# Where the running app answers, and how the person starts it. The agent never starts it itself.
 start_command:<%= start_command ? " #{start_command.inspect}" : "" %>
 url:<%= url ? " #{url.inspect}" : "" %>
 # How to sign in locally, e.g. "use the seed account from db/seeds.rb". No real credentials here.
@@ -8,6 +8,12 @@ sign_in:
 
 # Workflow file name under .github/workflows, used to request an assessment by hand.
 workflow: <%= workflow %>
+
+# Someone other than the author may put this label on a PR to let review proceed without a browser
+# run, for example when a scenario cannot be exercised locally. Set waiver_by_author to true in a
+# repository with a single maintainer.
+waiver_label: browser-verification-waived
+waiver_by_author: false
 
 # PRs that are never gated.
 skip_authors:

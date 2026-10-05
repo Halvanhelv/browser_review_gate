@@ -14,6 +14,7 @@ module BrowserReviewGate
       kind, body = github.writes.fetch(0)
       assert_equal :create_comment, kind
       assert_includes body, "```\n/browser-pr-verification 123\n```"
+      assert_includes body, "@dev-user Browser testing is needed"
       assert_includes model.requests.fetch(0)[:user], "show.html.erb"
     end
 
@@ -26,6 +27,7 @@ module BrowserReviewGate
       refute assessment.required?
       assert_empty model.requests
       assert_includes github.writes.fetch(0).last, "not needed"
+      refute_includes github.writes.fetch(0).last, "@dev-user"
     end
 
     def test_does_not_ask_the_model_again_for_an_assessed_head
@@ -65,6 +67,16 @@ module BrowserReviewGate
       assess(github, FakeModel.new(answer(covered_by_report: false)))
 
       assert_includes github.writes, [ :remove_label, "browser-verified" ]
+    end
+
+    def test_a_new_commit_that_owes_a_run_gets_a_new_comment_mentioning_who_pushed_it
+      stale = assessment_comment(decision: "not-required", sha: OLD, id: 7)
+      github = FakeGitHub.new(comments: [ stale ], commit_author: "teammate")
+
+      assess(github, FakeModel.new(answer))
+
+      assert_equal [ :delete_comment, :create_comment ], github.writes.map(&:first)
+      assert_includes github.writes.last.last, "@teammate @dev-user Browser testing is needed"
     end
 
     def test_keeps_the_label_when_the_model_finds_the_older_run_still_covers_a_new_commit

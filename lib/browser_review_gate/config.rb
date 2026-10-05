@@ -6,6 +6,10 @@ module BrowserReviewGate
     PATH = ".github/browser-review-gate.yml"
     DEFAULTS = {
       "label" => "browser-verified",
+      # A person other than the author adds this label to let review proceed without a browser run.
+      "waiver_label" => "browser-verification-waived",
+      "waiver_by_author" => false,
+      "status_context" => "browser-verification",
       "command" => "/browser-pr-verification",
       "workflow" => "browser-review-gate.yml",
       "model" => nil,

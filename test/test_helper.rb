@@ -12,17 +12,20 @@ module BrowserReviewGate
 
   # A pull request held in memory. Records every write the code under test makes.
   class FakeGitHub
-    attr_reader :writes, :comments_list, :labels
+    attr_reader :writes, :comments_list, :labels, :statuses, :reviewers
     attr_accessor :branch_pr
 
     def initialize(head: HEAD, labels: [], comments: [], files: nil, reviewers: [], teams: [], author: "dev-user",
-      branch: "feature/thing", login: "dev-user")
+      branch: "feature/thing", login: "dev-user", label_actors: {}, commit_author: nil)
+      @label_actors = label_actors
+      @commit_author = commit_author
+      @statuses = []
       @head = head
       @labels = labels.dup
       @comments_list = comments.dup
       @files = files || [ { "filename" => "app/views/home/show.html.erb", "status" => "modified", "patch" => "+<h1>Hello</h1>" } ]
-      @reviewers = reviewers
-      @teams = teams
+      @reviewers = reviewers.dup
+      @teams = teams.dup
       @author = author
       @branch = branch
       @login = login
@@ -44,9 +47,30 @@ module BrowserReviewGate
         "requested_teams" => @teams.map { |slug| { "slug" => slug } } }
     end
 
+    # Comments written during a test come from the workflow's bot, as they do in CI.
     def create_comment(_number, body)
       @writes << [ :create_comment, body ]
-      @comments_list << { "id" => (@next_id += 1), "body" => body, "user" => { "login" => @login } }
+      @comments_list << { "id" => (@next_id += 1), "body" => body, "user" => { "login" => @comment_author || @login } }
+    end
+
+    def comment_as(login)
+      @comment_author = login
+      self
+    end
+
+    def label_actor(_number, label) = @label_actors[label]
+    def commit_author(_sha) = @commit_author
+
+    def delete_comment(id)
+      @writes << [ :delete_comment, id ]
+      @comments_list.reject! { |comment| comment["id"] == id }
+    end
+    def set_status(_sha, state:, description:, context:) = @statuses << [ state, description ]
+
+    def request_reviewers(_number, reviewers:, team_reviewers:)
+      @writes << [ :request_reviewers, reviewers, team_reviewers ]
+      @reviewers |= reviewers
+      @teams |= team_reviewers
     end
 
     def update_comment(id, body)
@@ -66,6 +90,8 @@ module BrowserReviewGate
 
     def remove_reviewers(_number, reviewers:, team_reviewers:)
       @writes << [ :remove_reviewers, reviewers, team_reviewers ]
+      @reviewers -= reviewers
+      @teams -= team_reviewers
     end
 
     def dispatch_workflow(workflow, number) = @writes << [ :dispatch, workflow, number ]
@@ -89,9 +115,10 @@ module BrowserReviewGate
   class FakeShell
     attr_reader :saved_path
 
-    def initialize(head: HEAD, status: "")
+    def initialize(head: HEAD, status: "", changed: [])
       @head = head
       @status = status
+      @changed = changed
       @saved_path = File.join(Dir.mktmpdir, "browser-verification", "#{head}.json")
     end
 
@@ -100,6 +127,8 @@ module BrowserReviewGate
       when [ "git", "rev-parse", "HEAD" ] then @head
       when [ "git", "status", "--porcelain" ] then @status
       when [ "git", "rev-parse", "--git-path", "browser-verification/#{@head}.json" ] then @saved_path
+      when [ "git", "diff", "--name-only", "origin/HEAD...HEAD" ] then raise Error, "unknown revision"
+      when [ "git", "diff", "--name-only", "origin/main...HEAD" ] then @changed.join("\n")
       else raise "Unexpected command: #{argv.inspect}"
       end
     end

@@ -26,8 +26,12 @@ in [ "api", "user", "--jq", ".login" ] then puts login
 in [ "api", "--paginate", "--slurp", path ] if path.include?("/comments") then puts JSON.generate([ state["comments"] ])
 in [ "api", "--paginate", "--slurp", path ] if path.include?("/files") then puts JSON.generate([ state["files"] ])
 in [ "api", "-X", "GET", path ] if path.end_with?("/pulls/7") then puts JSON.generate(pull.call)
+in [ "api", "-X", "GET", path ] if path.include?("/commits/") then puts JSON.generate(author: { login: "dev-user" })
+in [ "api", "-X", "DELETE", path ] if path.include?("/issues/comments/")
+  state["comments"].reject! { |comment| comment["id"] == path.split("/").last.to_i }
+  save.call
 in [ "api", "-X", "POST", path, "--input", "-" ] if path.end_with?("/comments")
-  state["comments"] << { id: state["comments"].size + 1, body: input.call.fetch("body"), user: { login: login } }
+  state["comments"] << { id: (state["next_id"] = state.fetch("next_id", 0) + 1), body: input.call.fetch("body"), user: { login: login } }
   save.call
   puts "{}"
 in [ "api", "-X", "PATCH", path, "--input", "-" ]
@@ -46,6 +50,16 @@ in [ "api", "-X", "DELETE", path, "--input", "-" ] if path.end_with?("/requested
   state["reviewers"] -= input.call.fetch("reviewers")
   save.call
   puts "{}"
+in [ "api", "-X", "POST", path, "--input", "-" ] if path.end_with?("/requested_reviewers")
+  state["reviewers"] |= input.call.fetch("reviewers")
+  save.call
+  puts "{}"
+in [ "api", "-X", "POST", path, "--input", "-" ] if path.include?("/statuses/")
+  (state["statuses"] ||= []) << input.call.slice("state", "description")
+  save.call
+  puts "{}"
+in [ "api", "--paginate", "--slurp", path ] if path.include?("/events")
+  puts JSON.generate([ state["events"] || [] ])
 else
   abort "fake gh: unexpected call #{argv.inspect}"
 end

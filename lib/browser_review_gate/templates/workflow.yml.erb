@@ -13,7 +13,7 @@ name: Browser review gate
 
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize, review_requested]
+    types: [opened, reopened, synchronize, review_requested, labeled]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -25,6 +25,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
+  statuses: write
 
 concurrency:
   group: browser-review-gate-${{ github.event.pull_request.number || inputs.pr_number }}
@@ -32,6 +33,10 @@ concurrency:
 
 jobs:
   gate:
+    # Of all labels, only the two that open the gate matter: a published run and a waiver.
+    if: >-
+      github.event.action != 'labeled' ||
+      contains(fromJSON('<%= JSON.generate(gate_labels) %>'), github.event.label.name)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

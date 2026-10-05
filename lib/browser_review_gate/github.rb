@@ -35,6 +35,17 @@ module BrowserReviewGate
       @shell.call("gh", "api", "user", "--jq", ".login").strip
     end
 
+    # The GitHub account behind a commit, or nil when the commit is not linked to one.
+    def commit_author(sha)
+      api("repos/#{repository}/commits/#{sha}").dig("author", "login")
+    rescue Error
+      nil
+    end
+
+    def delete_comment(comment_id)
+      @shell.call("gh", "api", "-X", "DELETE", "repos/#{repository}/issues/comments/#{comment_id}")
+    end
+
     def create_comment(number, body)
       api("repos/#{repository}/issues/#{number}/comments", method: "POST", input: { body: body })
     end
@@ -55,6 +66,25 @@ module BrowserReviewGate
     def remove_reviewers(number, reviewers:, team_reviewers:)
       api("repos/#{repository}/pulls/#{number}/requested_reviewers", method: "DELETE",
         input: { reviewers: reviewers, team_reviewers: team_reviewers })
+    end
+
+    def request_reviewers(number, reviewers:, team_reviewers:)
+      api("repos/#{repository}/pulls/#{number}/requested_reviewers", method: "POST",
+        input: { reviewers: reviewers, team_reviewers: team_reviewers })
+    end
+
+    # Shows the state next to the other checks of the commit.
+    def set_status(sha, state:, description:, context:)
+      api("repos/#{repository}/statuses/#{sha}", method: "POST",
+        input: { state: state, description: description[0, 140], context: context })
+    end
+
+    # Who put the label on the PR last, or nil.
+    def label_actor(number, label)
+      event = pages("repos/#{repository}/issues/#{number}/events").reverse.find do |entry|
+        entry["event"] == "labeled" && entry.dig("label", "name") == label
+      end
+      event&.dig("actor", "login")
     end
 
     def dispatch_workflow(workflow, number)

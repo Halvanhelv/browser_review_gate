@@ -13,16 +13,21 @@ This file is the playbook for the AI coding agent that does the run. The person 
    - `request_assessment`: run `browser-review-gate request-assessment NUMBER`, wait about a minute, then start again.
    - `publish_saved`: a run saved for this commit exists. Run `browser-review-gate publish` and stop; nothing runs again.
    - `open_pull_request`: a run is saved and waits for the PR. Tell the person to open it.
+   - `ask_to_start_app`: the app is not running. Do not start it yourself: ask the person to start it (`app.start_command` says how) and stop until they have.
    - `run_and_publish` or `run_and_save`: continue with step 2.
 2. Read the diff against the base branch and the earlier report in the PR, if any. Then read `<%= rules_path %>`: it says what this project always checks and which scenarios each area needs, and its rules are mandatory. List the scenarios for the behavior that changed, plus the ones the project rules require for the areas the change touches. Do not re-run behavior an earlier passing case still covers.
-3. Start the app and open it in a browser tool. `app` in the status output says how: start command, URL, sign-in hint. Use local test data and do not destroy existing data. If the app, the data, or a browser tool is missing, report the blocker. Reading code and running unit tests does not replace a browser run.
+3. Open the running app in a browser tool. `app` in the status output gives the URL and a sign-in hint. Never start, restart or stop the app yourself: what runs on the person's machine is their decision. Use local test data and do not destroy existing data. If the app, the data, or a browser tool is missing, report the blocker. Reading code and running unit tests does not replace a browser run.
 4. Run every scenario end to end. After key actions check the page state, console errors, and failed requests. Record what you observed. A skipped or blocked scenario is not a pass.
 5. Write the report as JSON outside the repository (see the shape below). Set `coverage_complete` to true only when every scenario from step 2 ran.
 6. Publish or save, from the checkout that was tested, with everything committed and pushed:
    - PR exists: `browser-review-gate publish --report PATH` (add `--pr NUMBER` when the branch has several). It posts the cases with their outcomes. Only a complete all-pass report adds the `<%= label %>` label.
    - No PR yet: `browser-review-gate save --report PATH`. The run is published when the PR for this commit is opened. A new commit makes it stale.
 7. Check the command result and the PR. A non-zero exit can still mean a report was posted: a failing or incomplete report is visible in the PR and review stays closed.
-8. Request a reviewer only when the person named one and only after the run passed. Otherwise say that review can be requested.
+8. Request a reviewer only when the person named one and only after the run passed. Reviewers whose requests CI took back earlier are asked again automatically. Otherwise say that review can be requested.
+
+## When a scenario cannot be run
+
+Some scenarios cannot be exercised locally, for example a sign-in through an external provider. Do not mark the run complete and do not drop the scenario silently. Tell the person. They can list it under `excluded` in the report, or someone other than the author can put the `<%= waiver_label %>` label on the PR to let review proceed without a run.
 
 ## Report shape
 

@@ -47,6 +47,8 @@ module BrowserReviewGate
       assert_includes state.fetch("comments").last.fetch("body"), "Run `/browser-pr-verification 7`"
       assert_equal "run_and_publish", status.fetch("next")
 
+      assert_equal "pending", state.fetch("statuses").last.fetch("state")
+
       # The agent runs the new scenario and publishes; the earlier case is carried over.
       run!("publish", "--report", report("BROWSER-2"))
       assert_equal [ "browser-verified" ], state.fetch("labels")
@@ -54,9 +56,34 @@ module BrowserReviewGate
       assert_includes published, "BROWSER-1"
       assert_includes published, "BROWSER-2"
 
-      update_state("reviewers" => [ "reviewer" ])
+      # The label starts the gate again, and it asks the same reviewer without anyone doing it by hand.
       run!("ci", "7", login: "github-actions[bot]")
       assert_equal [ "reviewer" ], state.fetch("reviewers")
+      assert_equal "success", state.fetch("statuses").last.fetch("state")
+      assert_includes state.fetch("comments").last.fetch("body"), "Review requested again from reviewer"
+    end
+
+    def test_a_waiver_from_another_person_lets_review_proceed_without_a_run
+      update_state("open" => true, "head" => head, "files" => [ file("app/views/home.erb") ], "reviewers" => [ "reviewer" ],
+        "labels" => [ "browser-verification-waived" ],
+        "events" => [ { "event" => "labeled", "label" => { "name" => "browser-verification-waived" }, "actor" => { "login" => "lead" } } ])
+
+      output = run!("ci", "7", login: "github-actions[bot]")
+
+      assert_equal [ "reviewer" ], state.fetch("reviewers")
+      assert_includes output, "waived by lead"
+    end
+
+    def test_before_opening_a_pr_the_hook_asks_for_a_run_and_lets_a_saved_one_through
+      update_state("open" => false)
+      payload = JSON.generate(tool_input: { command: "gh pr create --title x" })
+
+      denied = JSON.parse(run!("hook", "claude", "--before", stdin: payload))
+      assert_equal "deny", denied.dig("hookSpecificOutput", "permissionDecision")
+      assert_includes denied.dig("hookSpecificOutput", "permissionDecisionReason"), "/browser-pr-verification"
+
+      run!("save", "--report", report("BROWSER-1"))
+      assert_equal "", run!("hook", "claude", "--before", stdin: payload)
     end
 
     def test_a_pr_that_cannot_touch_the_browser_is_cleared_without_the_model

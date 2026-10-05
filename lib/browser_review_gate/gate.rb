@@ -1,14 +1,19 @@
+require "json"
+
 module BrowserReviewGate
-  # Removes reviewer requests from a PR whose browser-visible changes have not been verified yet.
-  # GitHub cannot refuse a review request, so the request is taken back right after it is made.
+  # Keeps reviewer requests off a PR whose browser behavior has not been verified, and puts them back
+  # once it has. GitHub cannot refuse a review request, so a premature one is taken back right after
+  # it is made; the people it named are remembered in one PR comment.
   class Gate
+    PAUSED = /<!--\s*browser-review-gate:paused:([A-Za-z0-9_-]+)\s*-->/
+
     def initialize(github:, config: Config.new, log: $stdout)
       @github = github
       @config = config
       @log = log
     end
 
-    # Returns :open when review may proceed and :closed when reviewer requests were taken back.
+    # Returns :open when review may proceed and :closed when it waits for a browser run.
     def enforce(number)
       pull_request = @github.pull_request(number)
       comments = @github.comments(number)
@@ -16,52 +21,117 @@ module BrowserReviewGate
       assessment = Assessment.latest(comments)
       assessment = nil unless assessment&.for?(head_sha)
 
-      return open("Browser verification is not needed.") if assessment && !assessment.required?
-      return open("Required browser cases are verified.") if assessment && verified?(pull_request, comments)
-
-      take_back_requests(number, pull_request, comments, assessment, head_sha)
+      verdict, description = verdict(number, pull_request, comments, assessment)
+      report_status(head_sha, verdict, description)
+      @log.puts description
+      if verdict == :open
+        restore_requests(number, pull_request, comments)
+      else
+        take_back_requests(number, pull_request, comments, assessment)
+      end
+      verdict
     end
 
     private
 
-    def open(message)
-      @log.puts message
-      :open
+    def verdict(number, pull_request, comments, assessment)
+      waived_by = waiver(number, pull_request)
+      return [ :open, "Browser verification waived by #{waived_by}." ] if waived_by
+      return [ :closed, "The browser-testing assessment for this commit is not available." ] unless assessment
+      return [ :open, "Browser verification is not needed." ] unless assessment.required?
+      return [ :open, "Required browser cases are verified." ] if verified?(pull_request, comments)
+
+      [ :closed, "Browser run needed: #{@config.command} #{number}" ]
+    end
+
+    def labelled?(pull_request, label)
+      pull_request.fetch("labels").any? { |entry| entry["name"] == label }
     end
 
     def verified?(pull_request, comments)
-      pull_request.fetch("labels").any? { |label| label["name"] == @config.label } && !Report.latest_passing(comments).nil?
+      labelled?(pull_request, @config.label) && !Report.latest_passing(comments).nil?
     end
 
-    def take_back_requests(number, pull_request, comments, assessment, head_sha)
+    # A waiver counts only from someone other than the author, unless the project allows otherwise.
+    def waiver(number, pull_request)
+      return unless labelled?(pull_request, @config.waiver_label)
+
+      actor = @github.label_actor(number, @config.waiver_label)
+      actor if actor && (@config.waiver_by_author || actor != pull_request.dig("user", "login"))
+    end
+
+    # A workflow installed before statuses were added has no permission to write them.
+    def report_status(sha, verdict, description)
+      @github.set_status(sha, state: verdict == :open ? "success" : "pending", description: description,
+        context: @config.status_context)
+    rescue Error => error
+      @log.puts "Commit status was not updated: #{error.message.lines.first.to_s.strip}"
+    end
+
+    def take_back_requests(number, pull_request, comments, assessment)
       reviewers = pull_request.fetch("requested_reviewers", []).map { |reviewer| reviewer["login"] }
       teams = pull_request.fetch("requested_teams", []).map { |team| team["slug"] }
-      if reviewers.empty? && teams.empty?
-        @log.puts "There are no pending reviewer requests to take back."
-        return :closed
-      end
+      return @log.puts("There are no pending reviewer requests to take back.") if reviewers.empty? && teams.empty?
 
       @github.remove_reviewers(number, reviewers: reviewers, team_reviewers: teams)
-      marker = "<!-- browser-review-gate:#{head_sha} -->"
-      unless comments.any? { |comment| comment["body"].to_s.include?(marker) }
-        outdated = !Report.latest_passing(comments).nil?
-        @github.create_comment(number, "#{marker}\n#{notice(number, assessment, outdated)}")
-      end
+      waiting = paused(comments)
+      waiting = { "reviewers" => waiting["reviewers"] | reviewers, "teams" => waiting["teams"] | teams }
+      write_notice(number, comments, "#{author(pull_request)}#{notice(number, assessment, comments)}\n\n#{names(waiting)} will be " \
+        "asked again automatically once the run is published.", waiting)
       @log.puts "Took back reviewer requests until browser verification is available."
-      :closed
     end
 
-    # `outdated` is true when a passing run exists but no longer covers the latest commits.
-    def notice(number, assessment, outdated)
-      if assessment
-        missing = outdated ? "the published browser run does not cover the latest commits" :
-                             "no successful local browser run has been published yet"
-        "Review request paused. Browser testing is required for this change, and #{missing}. " \
-          "Run `#{@config.command} #{number}` in your AI coding agent from the PR branch, then request review again."
-      else
-        "Review request paused. The browser-testing assessment for this commit is not available. " \
-          "Request review again to retry it."
+    # Asks the people whose requests were taken back, now that review may proceed.
+    def restore_requests(number, pull_request, comments)
+      waiting = paused(comments)
+      reviewers = waiting["reviewers"] - [ pull_request.dig("user", "login") ]
+      return if reviewers.empty? && waiting["teams"].empty?
+
+      @github.request_reviewers(number, reviewers: reviewers, team_reviewers: waiting["teams"])
+      write_notice(number, comments, "#{author(pull_request)}Review requested again from #{names(waiting)}: browser verification no longer holds it back.",
+        "reviewers" => [], "teams" => [])
+      @log.puts "Requested review again from #{names(waiting)}."
+    rescue Error => error
+      @log.puts "Review was not requested again: #{error.message.lines.first.to_s.strip}"
+    end
+
+    def notice_comment(comments)
+      comments.reverse.find { |comment| comment.dig("user", "login") == Assessment::AUTHOR && comment["body"].to_s.match?(PAUSED) }
+    end
+
+    # The people whose requests were taken back and not yet restored.
+    def paused(comments)
+      comment = notice_comment(comments)
+      data = comment ? JSON.parse(Marker.decode(comment["body"].match(PAUSED)[1])) : {}
+      { "reviewers" => Array(data["reviewers"]), "teams" => Array(data["teams"]) }
+    rescue ArgumentError, JSON::ParserError
+      { "reviewers" => [], "teams" => [] }
+    end
+
+    def write_notice(number, comments, text, waiting)
+      body = "#{text}\n\n<!-- browser-review-gate:paused:#{Marker.encode(JSON.generate(waiting))} -->"
+      comment = notice_comment(comments)
+      if comment.nil?
+        @github.create_comment(number, body)
+      elsif comment["body"] != body
+        @github.update_comment(comment.fetch("id"), body)
       end
+    end
+
+    def author(pull_request) = Markdown.mention(pull_request.dig("user", "login"))
+
+    def names(waiting)
+      (waiting["reviewers"] + waiting["teams"]).map { |name| Markdown.escape(name) }.join(", ")
+    end
+
+    def notice(number, assessment, comments)
+      return "Review request paused. The browser-testing assessment for this commit is not available. Request review again to retry it." unless assessment
+
+      outdated = !Report.latest_passing(comments).nil?
+      missing = outdated ? "the published browser run does not cover the latest commits" :
+                           "no successful local browser run has been published yet"
+      "Review request paused. Browser testing is required for this change, and #{missing}. " \
+        "Run `#{@config.command} #{number}` in your AI coding agent from the PR branch."
     end
   end
 end

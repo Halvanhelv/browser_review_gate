@@ -21,6 +21,13 @@ module BrowserReviewGate
       assert_nil Assessment.latest([ { "body" => "<!-- browser-verification-assessment:%%% -->", "user" => { "login" => Assessment::AUTHOR } } ])
     end
 
+    def test_only_a_plain_login_is_mentioned
+      assert_equal "@dev-user ", Markdown.mention("dev-user")
+      assert_equal "", Markdown.mention("dependabot[bot]")
+      assert_equal "", Markdown.mention("someone here")
+      assert_equal "", Markdown.mention(nil)
+    end
+
     def test_a_report_passes_only_when_complete_and_every_case_passed
       assert Report.new(report_data("verified_by" => "dev")).passed?
       refute Report.new(report_data("verified_by" => "dev", "coverage_complete" => false)).passed?
@@ -73,7 +80,7 @@ module BrowserReviewGate
 
     def test_status_names_the_next_step
       shell = FakeShell.new
-      status = ->(github) { Status.new(github: github, shell: shell).to_h(123).fetch("next") }
+      status = ->(github) { Status.new(github: github, shell: shell, probe: ->(_url) { true }).to_h(123).fetch("next") }
 
       assert_equal "request_assessment", status.call(FakeGitHub.new)
       assert_equal "run_and_publish", status.call(FakeGitHub.new(comments: [ assessment_comment ]))
@@ -88,16 +95,44 @@ module BrowserReviewGate
       assert_equal "open_pull_request", Status.new(github: no_pr, shell: shell).to_h.fetch("next")
     end
 
+    def test_status_never_tells_the_agent_to_start_the_app
+      config = Config.new("url" => "http://localhost:3000", "start_command" => "bin/dev")
+      status = ->(running) { Status.new(github: FakeGitHub.new(comments: [ assessment_comment ]), config: config, shell: FakeShell.new, probe: ->(_url) { running }).to_h(123) }
+
+      assert_equal "run_and_publish", status.call(true).fetch("next")
+      stopped = status.call(false)
+      assert_equal "ask_to_start_app", stopped.fetch("next")
+      assert_equal false, stopped.dig("app", "running")
+    end
+
+    def test_before_a_command_the_hook_says_when_a_run_is_owed
+      shell = FakeShell.new(changed: [ "app/views/home.erb" ])
+      owed = FakeGitHub.new(comments: [ assessment_comment ])
+      hook = ->(github, sh = shell) { Hook.new(publisher_factory: -> { }, status_factory: -> { Status.new(github: github, shell: sh, probe: ->(_url) { true }) }, shell: sh) }
+
+      assert_nil hook.call(owed).before('{"command":"ls"}')
+      assert_includes hook.call(owed).before('{"command":"gh pr create --title x"}'), "No browser run is saved"
+      assert_nil hook.call(owed).before('{"command":"BROWSER_REVIEW_GATE_SKIP=1 gh pr create --title x"}')
+      assert_nil hook.call(owed, FakeShell.new(changed: [ "README.md", "docs/a.md" ])).before('{"command":"gh pr create"}')
+      assert_includes hook.call(owed).before('{"command":"gh pr edit 123 --add-reviewer someone"}'), "needs a browser run"
+      cleared = FakeGitHub.new(comments: [ assessment_comment(decision: "not-required") ])
+      assert_nil hook.call(cleared).before('{"command":"gh pr edit 123 --add-reviewer someone"}')
+
+      message = "wait"
+      assert_equal "deny", JSON.parse(Hook.render(message, "claude", before: true)).dig("hookSpecificOutput", "permissionDecision")
+      assert_equal "deny", JSON.parse(Hook.render(message, "cursor", before: true)).fetch("permission")
+    end
+
     def test_the_hook_publishes_a_saved_run_only_after_a_pr_was_opened
       shell = FakeShell.new
       github = FakeGitHub.new
       hook = Hook.new(publisher_factory: -> { Publisher.new(github: github, shell: shell) }, shell: shell)
 
-      assert_nil hook.call('{"tool_input":{"command":"ls"}}')
-      assert_nil hook.call('{"tool_input":{"command":"gh pr create --title x"}}')
+      assert_nil hook.after('{"tool_input":{"command":"ls"}}')
+      assert_nil hook.after('{"tool_input":{"command":"gh pr create --title x"}}')
 
       Publisher.new(github: github, report_path: report_file, shell: shell).save
-      message = hook.call('{"command":"gh pr create --title x"}')
+      message = hook.after('{"command":"gh pr create --title x"}')
       assert_includes message, "published"
       assert_includes github.writes.map(&:first), :add_label
       assert_equal message, JSON.parse(Hook.render(message, "claude")).dig("hookSpecificOutput", "additionalContext")

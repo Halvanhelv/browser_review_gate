@@ -79,10 +79,18 @@ browser-review-gate ci N                        what the workflow runs
 
 Local commands need the `gh` CLI, signed in.
 
+## Less friction
+
+- **Reviewers come back on their own.** A request taken back is remembered; once the run is published, the same people are asked again.
+- **A waiver for what cannot be run.** Someone other than the author adds the `browser-verification-waived` label and review proceeds without a run.
+- **A status next to the checks.** `browser-verification` is pending while a run is owed and green otherwise. Make it a required check if you want it to block merging.
+- **A reminder before the PR.** In Claude Code, Cursor and Codex, `gh pr create` and review requests are held with a message when a run is still owed. The agent runs the verification first, or repeats the command with `BROWSER_REVIEW_GATE_SKIP=1` when the person says to go ahead.
+- **The agent does not start your app.** It uses the one that is running and asks you to start it otherwise.
+
 ## What it does not do
 
 - It cannot refuse a review request. GitHub has no such switch, so the request is taken back seconds after it is made, and the reviewer may still get a notification.
-- It does not block merging. Add your own branch protection for that.
+- It does not block merging by itself. Make the `browser-verification` status a required check for that.
 - The model that assesses a PR sees the diff as data, has no tools, and answers in a fixed JSON shape. The gem validates the answer and does every write. PR code is never checked out or run in CI.
 
 ## Development

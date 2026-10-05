@@ -35,8 +35,9 @@ module BrowserReviewGate
       report = Report.latest_passing(comments)
 
       existing = Assessment.latest(comments)
-      assessment = existing&.for?(head_sha) ? existing : propose(number, pull_request, head_sha, report)
-      publish(number, assessment, pull_request, comments, report)
+      assessed_before = existing&.for?(head_sha)
+      assessment = assessed_before ? existing : propose(number, pull_request, head_sha, report)
+      publish(number, assessment, pull_request, comments, report, new_commit: !assessed_before)
       assessment
     rescue KeyError => error
       raise Error, "Browser assessment data is incomplete: #{error.message}"
@@ -56,19 +57,33 @@ module BrowserReviewGate
     end
 
     # Ordinary commits keep the label; it goes only when the report does not cover the commit.
-    def publish(number, assessment, pull_request, comments, report)
+    def publish(number, assessment, pull_request, comments, report, new_commit:)
       labelled = pull_request.fetch("labels").any? { |label| label["name"] == @config.label }
       covered = covered?(assessment, report)
-      @github.remove_label(number, @config.label) if assessment.required? && labelled && !covered
+      run_owed = assessment.required? && !(labelled && covered)
+      @github.remove_label(number, @config.label) if run_owed && labelled
 
       comment = Assessment.latest_comment(comments)
-      body = assessment.markdown(verified: labelled && covered, command: "#{@config.command} #{number}")
+      body = assessment.markdown(verified: labelled && covered, command: "#{@config.command} #{number}",
+        author: run_owed ? people_to_tell(pull_request, assessment.assessed_sha) : nil)
       if comment.nil?
         @github.create_comment(number, body)
-      elsif comment["body"] != body
+      elsif comment["body"] == body
+        nil
+      elsif run_owed && new_commit
+        # An edited comment notifies nobody. A new commit that owes a run gets a new comment, so the
+        # mention reaches the person and the comment sits next to the commit.
+        @github.delete_comment(comment.fetch("id"))
+        @github.create_comment(number, body)
+      else
         @github.update_comment(comment.fetch("id"), body)
       end
       @log.puts "Browser assessment for #{assessment.assessed_sha}: #{assessment.decision} — #{assessment.reason}"
+    end
+
+    # Whoever pushed the commit that owes the run, and the PR author when that is someone else.
+    def people_to_tell(pull_request, sha)
+      [ @github.commit_author(sha), pull_request.dig("user", "login") ]
     end
 
     # A complete passing run on this exact commit covers it by definition; an older run covers it only

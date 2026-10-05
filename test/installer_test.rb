@@ -35,8 +35,13 @@ module BrowserReviewGate
       settings = JSON.parse(read(".claude/settings.json"))
       assert_equal "lint", settings.dig("hooks", "Stop", 0, "hooks", 0, "command")
       assert_includes settings.dig("hooks", "PostToolUse", 0, "hooks", 0, "command"), "browser-review-gate hook claude || true"
-      assert_includes JSON.parse(read(".cursor/hooks.json")).dig("hooks", "afterShellExecution", 0, "command"), "browser-review-gate hook cursor || true"
-      assert_includes JSON.parse(read(".codex/hooks.json")).dig("hooks", "PostToolUse", 0, "hooks", 0, "command"), "browser-review-gate hook codex || true"
+      assert_includes settings.dig("hooks", "PreToolUse", 0, "hooks", 0, "command"), "browser-review-gate hook claude --before || true"
+      cursor = JSON.parse(read(".cursor/hooks.json")).fetch("hooks")
+      assert_includes cursor.dig("afterShellExecution", 0, "command"), "browser-review-gate hook cursor || true"
+      assert_includes cursor.dig("beforeShellExecution", 0, "command"), "browser-review-gate hook cursor --before || true"
+      assert_includes JSON.parse(read(".codex/hooks.json")).dig("hooks", "PreToolUse", 0, "hooks", 0, "command"), "hook codex --before"
+      assert_includes workflow, "labeled"
+      assert_includes workflow, %(fromJSON('["browser-verified","browser-verification-waived"]'))
 
       agents = read("AGENTS.md")
       assert_includes agents, "Existing notes."
@@ -56,6 +61,16 @@ module BrowserReviewGate
       assert_equal "Our own notes.\n", read("docs/browser-review-gate.md")
       assert_includes log.string, "skipped   docs/browser-review-gate.md"
       assert_equal 1, read("AGENTS.md").scan("browser_review_gate:start").size
+    end
+
+    def test_an_install_made_by_an_older_version_gains_the_before_hook_only
+      touch(".claude/settings.json", JSON.generate(hooks: { PostToolUse: [ { matcher: "Bash", hooks: [ { type: "command", command: "browser-review-gate hook claude" } ] } ] }))
+
+      installer(agents: [ "claude" ]).install
+
+      hooks = JSON.parse(read(".claude/settings.json")).fetch("hooks")
+      assert_equal 1, hooks.fetch("PostToolUse").size
+      assert_equal 1, hooks.fetch("PreToolUse").size
     end
 
     def test_ci_can_take_the_gem_from_a_git_repository

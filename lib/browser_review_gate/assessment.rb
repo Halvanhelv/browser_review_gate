@@ -65,15 +65,17 @@ module BrowserReviewGate
 
     # `verified` is true when a passing report covers the browser behavior of this commit.
     # `command` is what the author runs in an AI coding agent, e.g. "/browser-pr-verification 42".
-    def markdown(verified:, command:)
+    # `author` is who gets mentioned, and only when the comment asks them to do something: one login
+    # or several.
+    def markdown(verified:, command:, author: nil)
       payload = Marker.encode(JSON.generate(to_h))
-      [ "## Browser verification", "", summary(verified, command), "",
+      [ "## Browser verification", "", summary(verified, command, author), "",
         "Assessed commit `#{assessed_sha}`.", "", "<!-- browser-verification-assessment:#{payload} -->" ].join("\n")
     end
 
     private
 
-    def summary(verified, command)
+    def summary(verified, command, author)
       why = Markdown.escape(reason)
       if !required?
         "Browser testing is not needed for this change: #{why} Human review can be requested."
@@ -81,7 +83,7 @@ module BrowserReviewGate
         "Browser testing is required for this change, and the published browser report covers it: #{why} " \
           "Human review can be requested."
       else
-        [ "Browser testing is needed before requesting human review. #{why}", "",
+        [ "#{Markdown.mention(author)}Browser testing is needed before requesting human review. #{why}", "",
           "To be able to request a reviewer, run this command in your AI coding agent from the PR branch:", "",
           "```", command, "```" ].join("\n")
       end

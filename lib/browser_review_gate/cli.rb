@@ -15,7 +15,8 @@ module BrowserReviewGate
         publish [--pr NUMBER] [--report PATH]     publish observed results (default: the saved run)
         save --report PATH                        keep results until the PR for this commit is opened
         request-assessment NUMBER                 ask CI to assess a PR that has no decision yet
-        hook [claude|cursor|codex]                post-command hook: publish the saved run after `gh pr create`
+        hook AGENT                                after a command: publish the saved run after `gh pr create`
+        hook AGENT --before                       before a command: say when a browser run is still owed
 
       For CI
         ci NUMBER                                 assess the PR and take back premature reviewer requests
@@ -118,9 +119,12 @@ module BrowserReviewGate
     end
 
     def hook
+      before = !@argv.delete("--before").nil?
       agent = @argv.shift
-      message = Hook.new(publisher_factory: -> { Publisher.new(github: github, config: config) }).call(@stdin.read)
-      output = Hook.render(message, agent)
+      hook = Hook.new(publisher_factory: -> { Publisher.new(github: github, config: config) },
+        status_factory: -> { Status.new(github: github, config: config) }, config: config)
+      message = before ? hook.before(@stdin.read) : hook.after(@stdin.read)
+      output = Hook.render(message, agent, before: before)
       @stdout.puts output if output
       0
     end
