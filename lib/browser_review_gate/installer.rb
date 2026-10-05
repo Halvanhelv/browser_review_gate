@@ -94,7 +94,7 @@ module BrowserReviewGate
       managed(".claude/skills/browser-pr-verification/SKILL.md", render("claude_skill.md"))
       merge_json(".claude/settings.json") do |settings|
         entries = ((settings["hooks"] ||= {})["PostToolUse"] ||= [])
-        entries << { "matcher" => "Bash", "hooks" => [ { "type" => "command", "command" => "#{HOOK} claude", "timeout" => 60 } ] }
+        entries << { "matcher" => "Bash", "hooks" => [ { "type" => "command", "command" => hook_command("claude"), "timeout" => 60 } ] }
       end
     end
 
@@ -102,7 +102,7 @@ module BrowserReviewGate
       managed(".cursor/commands/browser-pr-verification.md", render("cursor_command.md"))
       merge_json(".cursor/hooks.json") do |settings|
         settings["version"] ||= 1
-        ((settings["hooks"] ||= {})["afterShellExecution"] ||= []) << { "command" => "#{HOOK} cursor" }
+        ((settings["hooks"] ||= {})["afterShellExecution"] ||= []) << { "command" => hook_command("cursor") }
       end
     end
 
@@ -111,13 +111,19 @@ module BrowserReviewGate
     def install_codex
       merge_json(".codex/hooks.json") do |settings|
         entries = ((settings["hooks"] ||= {})["PostToolUse"] ||= [])
-        entries << { "matcher" => "^Bash$", "hooks" => [ { "type" => "command", "command" => "#{HOOK} codex", "timeout" => 60 } ] }
+        entries << { "matcher" => "^Bash$", "hooks" => [ { "type" => "command", "command" => hook_command("codex"), "timeout" => 60 } ] }
       end
       path = "AGENTS.md"
       current = exist?(path) ? File.read(File.join(@root, path)) : nil
       block = render("agents_block.md")
       updated = current.to_s.match?(BLOCK) ? current.sub(BLOCK) { block } : [ current.to_s.rstrip, block ].reject(&:empty?).join("\n\n")
       write(path, updated.end_with?("\n") ? updated : "#{updated}\n", current)
+    end
+
+    # A machine without the gem (a cloud agent, a fresh container) must not see a failing hook after
+    # every command.
+    def hook_command(agent)
+      "command -v browser-review-gate >/dev/null 2>&1 && #{HOOK} #{agent} || true"
     end
 
     def render(name)
