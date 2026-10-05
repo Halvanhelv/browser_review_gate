@@ -1,0 +1,28 @@
+# Browser verification: project rules
+
+<!--
+Rules for this application, in plain language. Two readers use them:
+- CI, when it decides whether a PR needs a browser run and whether a published run still covers it;
+- the AI coding agent, when it picks the scenarios to run.
+Write under the headings below and delete the ones you do not need. Text inside comments like this
+one is ignored. The built-in rules stay in force; these are added on top and win where they disagree.
+-->
+
+## When a browser run is needed
+
+<!-- Example: Any change under app/components/chat needs a run, even a small one.
+     Example: Changes to seed data and admin-only reports never need one. -->
+
+## Always check
+
+<!-- Example: Run every scenario once as an administrator and once as a regular member.
+     Example: Repeat the main scenario at a phone-sized window. -->
+
+## Scenarios by area
+
+<!-- Example: Chat - send a message, wait for the streamed answer to finish, reload and see it kept.
+     Example: Sign-in - a wrong password shows an error; a correct one lands on the dashboard. -->
+
+## Test data and accounts
+
+<!-- Example: Use the seed accounts. Create your own records for destructive steps and remove them after. -->

@@ -8,6 +8,7 @@ module BrowserReviewGate
 
       Set up a project
         install [--agents claude,cursor,codex] [--gem-source SOURCE] [--workflow NAME] [--force] [--dry-run]
+        eject policy|playbook                     copy a built-in text into the project to rewrite it there
 
       For an AI coding agent, from the checkout that was tested
         status [--pr NUMBER]                      what the PR needs and what to do next, as JSON
@@ -36,6 +37,7 @@ module BrowserReviewGate
       command = @argv.shift
       case command
       when "install" then install
+      when "eject" then eject
       when "status" then status
       when "publish" then publish
       when "save" then save
@@ -78,6 +80,11 @@ module BrowserReviewGate
 
     def install
       Installer.new(root: Dir.pwd, log: @stdout, **options(:install)).install
+      0
+    end
+
+    def eject
+      Installer.new(root: Dir.pwd, log: @stdout).eject(@argv.shift)
       0
     end
 

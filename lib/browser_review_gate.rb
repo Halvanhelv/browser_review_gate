@@ -30,6 +30,7 @@ module BrowserReviewGate
   autoload :Installer, File.join(__dir__, "browser_review_gate/installer")
   autoload :Markdown, File.join(__dir__, "browser_review_gate/markdown")
   autoload :ModelClient, File.join(__dir__, "browser_review_gate/model_client")
+  autoload :Prompts, File.join(__dir__, "browser_review_gate/prompts")
   autoload :Publisher, File.join(__dir__, "browser_review_gate/publisher")
   autoload :Report, File.join(__dir__, "browser_review_gate/report")
   autoload :SavedReport, File.join(__dir__, "browser_review_gate/saved_report")

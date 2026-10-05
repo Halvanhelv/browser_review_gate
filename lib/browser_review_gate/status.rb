@@ -8,6 +8,14 @@ module BrowserReviewGate
     end
 
     def to_h(number = nil)
+      result = facts(number)
+      result["project_rules"] = Prompts::RULES if Prompts.new.rules
+      result
+    end
+
+    private
+
+    def facts(number)
       local_sha = @shell.call("git", "rev-parse", "HEAD").strip
       saved = SavedReport.new(sha: local_sha, shell: @shell).exist?
       number ||= @github.pull_request_number_for_branch
@@ -25,8 +33,6 @@ module BrowserReviewGate
         "saved_run" => saved, "next" => next_step(assessment, verified, saved, head_sha == local_sha),
         "app" => @config.app }
     end
-
-    private
 
     def next_step(assessment, verified, saved, on_pr_head)
       return "nothing" if verified || (assessment && !assessment.required?)

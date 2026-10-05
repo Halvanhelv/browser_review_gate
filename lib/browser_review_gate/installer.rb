@@ -29,11 +29,26 @@ module BrowserReviewGate
 
       preflight(agents)
       create_only(Config::PATH, render("config.yml"))
+      create_only(Prompts::RULES, render("rules.md"))
       managed(".github/workflows/#{workflow}", render("workflow.yml"))
       managed(PLAYBOOK, render("playbook.md"))
       agents.each { |agent| send("install_#{agent}") }
       @log.puts "", "Agents: #{agents.join(", ")}.", next_steps
       agents
+    end
+
+    # Copies a built-in text into the project so it can be rewritten there. From then on the gem uses
+    # the project's copy and no longer updates it.
+    def eject(what)
+      case what
+      when "policy"
+        header = "<!-- Ejected from browser_review_gate #{VERSION}. This file replaces the built-in decision policy. -->\n\n"
+        create_only(Prompts::POLICY, header + Prompts.default_policy)
+      when "playbook"
+        write(PLAYBOOK, render("playbook.md").sub(/\A<!-- #{MANAGED}.*?-->\n/, ""), exist?(PLAYBOOK) ? File.read(File.join(@root, PLAYBOOK)) : nil)
+      else
+        raise Error, "eject takes `policy` or `playbook`"
+      end
     end
 
     # Which AI coding agents the project is set up for. AGENTS.md is read by most of them, so it is
@@ -53,6 +68,7 @@ module BrowserReviewGate
     def command = config.command
     def label = config.label
     def playbook_path = PLAYBOOK
+    def rules_path = Prompts::RULES
     def exist?(path) = File.exist?(File.join(@root, path))
 
     def start_command
@@ -170,7 +186,8 @@ module BrowserReviewGate
         Next:
           1. Add a CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret to the repository.
           2. Fill start_command, url and sign_in in #{Config::PATH}.
-          3. Commit and merge to the default branch: the workflow runs from there.
+          3. Describe what this application always checks in #{Prompts::RULES}.
+          4. Commit and merge to the default branch: the workflow runs from there.
       TEXT
     end
   end
