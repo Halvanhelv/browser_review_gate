@@ -58,6 +58,13 @@ module BrowserReviewGate
       raise Error, "gh returned commits without a sha for PR #{number}"
     end
 
+    # Paths changed from `base` to `head`, or nil when GitHub cuts the list (it returns at most 300).
+    def changed_files_between(base, head)
+      result = api("repos/#{repository}/compare/#{base}...#{head}")
+      files = Array(result["files"]).map { |file| file.fetch("filename") }
+      files.size >= 300 ? nil : files
+    end
+
     def files(number)
       pages("repos/#{repository}/pulls/#{number}/files")
     end

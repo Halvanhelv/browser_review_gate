@@ -237,6 +237,8 @@ module BrowserReviewGate
     end
 
     def provider_secrets(config)
+      return add("model credentials", "SKIP", "not needed: assessment is local, CI calls no model") if config.local?
+
       names = run("gh", "secret", "list", "--json", "name", "--jq", ".[].name")
       return add("model credentials", "SKIP", "repository secrets could not be listed (needs admin access)") unless names
 

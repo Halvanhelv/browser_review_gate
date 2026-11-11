@@ -43,6 +43,10 @@ module BrowserReviewGate
     def comments(_number) = @comments_list
     def reviews(_number) = @reviews_list
     def pull_request_commits(_number) = @commits
+    attr_writer :changed_since
+
+    # Files changed from a run's commit to the head, as GitHub's compare would list them.
+    def changed_files_between(base, _head) = (@changed_since || {}).fetch(base, [])
 
     def trusted_comments(_number)
       @comments_list.reject { |comment| comment["body"].to_s.match?(Report::MARKER) && !@writers.include?(comment.dig("user", "login")) }
@@ -141,6 +145,29 @@ module BrowserReviewGate
       when [ "git", "diff", "--name-only", "origin/HEAD...HEAD" ] then raise Error, "unknown revision"
       when [ "git", "diff", "--name-only", "origin/main...HEAD" ] then @changed.join("\n")
       else raise "Unexpected command: #{argv.inspect}"
+      end
+    end
+  end
+
+  # Answers the commands `doctor` runs, as a signed-in gh in a repository would.
+  class DoctorShell
+    def initialize(gh: true, push: "true", secrets: "", protection: nil)
+      @gh = gh
+      @push = push
+      @secrets = secrets
+      @protection = protection
+    end
+
+    def call(*argv, stdin_data: nil)
+      case argv
+      in [ "git", "rev-parse", "--show-toplevel" ] then "/repo\n"
+      in [ "git", "-C", _, "rev-parse", "HEAD" ] then respond_to?(:head) ? head : raise(Error, "no HEAD")
+      in [ "gh", "--version" ] | [ "gh", "auth", "status" ] then @gh ? "ok" : raise(Error, "gh is not installed")
+      in [ "gh", "api", path, "--jq", ".permissions.push" ] then @push
+      in [ "gh", "api", path, "--jq", ".default_branch" ] then "main"
+      in [ "gh", "api", path, "--jq", ".contexts[]" ] then @protection || raise(Error, "Not Found")
+      in [ "gh", "secret", "list", *] then @secrets
+      else raise Error, "unexpected #{argv.inspect}"
       end
     end
   end

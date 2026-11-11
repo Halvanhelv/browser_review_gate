@@ -1,6 +1,7 @@
 require "net/http"
 require "openssl"
 require "uri"
+require "stringio"
 
 module BrowserReviewGate
   # What an agent needs to know before a browser run: the decision for the PR head, the scenarios still
@@ -19,6 +20,9 @@ module BrowserReviewGate
 
     def to_h(number = nil, environment: nil)
       result = facts(number)
+      # "local": the agent chooses the scenarios (the list holds only the mandatory ones) and may report
+      # that no run is needed, with a reason. "ci": the list is complete; run exactly that.
+      result["assessment"] = @config.assessment
       result["project_rules"] = Prompts::RULES if @prompts.rules
       result["environment"] = environment_details(environment)
       result["policy"] = @config.policy
@@ -67,18 +71,24 @@ module BrowserReviewGate
       local_sha = @shell.call("git", "rev-parse", "HEAD").strip
       saved = SavedReport.new(sha: local_sha, shell: @shell).exist?
       number ||= @github.pull_request_number_for_branch
-      return { "pull_request" => nil, "local_head" => local_sha, "saved_run" => saved, "scenarios" => [], "next" => saved ? "open_pull_request" : "run_and_save" } unless number
+      unless number
+        return { "pull_request" => nil, "local_head" => local_sha, "saved_run" => saved, "scenarios" => [],
+                 "next" => saved ? "open_pull_request" : "run_and_save" }
+      end
 
       pull_request = @github.pull_request(number)
       comments = @github.trusted_comments(number)
       head_sha = pull_request.fetch("head").fetch("sha")
       assessment = Assessment.latest(comments)
       assessment = nil unless assessment&.for?(head_sha)
+      # In local mode the decision needs no model, so it is made here when CI has not written it yet.
+      assessment ||= Assessor.new(github: @github, model: nil, config: @config, log: StringIO.new).propose_locally(number, head_sha) if @config.local?
       labels = pull_request.fetch("labels").map { |label| label["name"] }
       report = Report.latest(comments, config: @config)
       commits = @github.pull_request_commits(number)
       reuse = @config.scenarios["reuse_passing"]
-      verified = labels.include?(@config.label) && assessment&.covered_by?(report, commits: commits, reuse_passing: reuse) == true
+      fresh = assessment&.local? && Freshness.new(github: @github, config: @config).fresh?(report, head_sha)
+      verified = labels.include?(@config.label) && assessment&.covered_by?(report, commits: commits, reuse_passing: reuse, fresh: fresh) == true
       waived = labels.include?(@config.waiver_label)
 
       { "pull_request" => number, "pr_head" => head_sha, "local_head" => local_sha,

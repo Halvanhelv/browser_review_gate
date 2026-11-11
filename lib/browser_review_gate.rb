@@ -30,6 +30,7 @@ module BrowserReviewGate
   autoload :ZipReader, File.join(__dir__, "browser_review_gate/zip_reader")
   autoload :Verify, File.join(__dir__, "browser_review_gate/verify")
   autoload :Config, File.join(__dir__, "browser_review_gate/config")
+  autoload :Freshness, File.join(__dir__, "browser_review_gate/freshness")
   autoload :Gate, File.join(__dir__, "browser_review_gate/gate")
   autoload :GitHub, File.join(__dir__, "browser_review_gate/github")
   autoload :Hook, File.join(__dir__, "browser_review_gate/hook")

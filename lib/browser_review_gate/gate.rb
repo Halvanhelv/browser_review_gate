@@ -50,9 +50,10 @@ module BrowserReviewGate
 
     # Only cases tested on a commit of this PR count: a report about other code proves nothing here.
     def verified?(number, pull_request, comments, assessment)
+      report = Report.latest(comments, config: @config)
+      fresh = assessment.local? && Freshness.new(github: @github, config: @config).fresh?(report, assessment.assessed_sha)
       labelled?(pull_request, @config.label) &&
-        assessment.covered_by?(Report.latest(comments, config: @config), commits: @github.pull_request_commits(number),
-          reuse_passing: @config.scenarios["reuse_passing"])
+        assessment.covered_by?(report, commits: @github.pull_request_commits(number), reuse_passing: @config.scenarios["reuse_passing"], fresh: fresh)
     end
 
     # A waiver counts only from someone other than the author, unless the project allows otherwise.

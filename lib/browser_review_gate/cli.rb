@@ -192,7 +192,7 @@ module BrowserReviewGate
 
       failed = false
       begin
-        model = @model || ModelClient.for(config)
+        model = @model || (config.local? ? nil : ModelClient.for(config))
         Assessor.new(github: github, model: model, config: config, prompts: Prompts.new(root), log: @stdout).assess(number, pull_request: pull_request)
       rescue Error => error
         failed = true

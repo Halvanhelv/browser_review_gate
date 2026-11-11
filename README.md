@@ -35,7 +35,7 @@ The installer detects which agents the project uses and sets up all of them; cho
 
 Then:
 
-1. Add one secret to the repository: `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY`.
+1. With `assessment: ci` (the default), add one secret to the repository: `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY`. With `assessment: local`, CI needs none.
 2. Describe your environments in `.github/browser-review-gate.yml`.
 3. Merge to the default branch. The workflow uses `pull_request_target`, so it runs from there.
 4. Optionally make the `browser-verification` status a required check so the gate also blocks merging.
@@ -51,11 +51,26 @@ Then:
 
 Later commits keep the verification unless they add a scenario no counting case covers; then only the new scenarios need to run (`scenarios.reuse_passing`).
 
+## Two modes
+
+`assessment` chooses who decides what a browser run must cover.
+
+| | `ci` (default) | `local` |
+|---|---|---|
+| Is a run needed, which scenarios | a model in CI reads each PR and names them | the author's agent decides |
+| CI needs a model secret, costs per PR | yes | no |
+| Catches an agent that tests the easy path and skips the important one | yes: CI compares against its own list | only through `scenarios.mandatory` and the reviewer |
+| A run counts after later commits | when they add no scenario it lacks | when only `ignore_paths` changed since |
+
+In `local` mode CI still holds review: any PR that touches more than `ignore_paths` owes a run. The agent picks scenarios from the diff and the project rules, runs them, and publishes; the settings' mandatory scenarios must be among them. When nothing the change does reaches the browser, the agent may publish `"not_required": { "reason": "..." }` with no cases instead; the reason appears in the PR for the reviewer to weigh. Start with `local` when the project has no AI key in CI or wants no per-PR cost; move to `ci` when an independent list of scenarios is worth it.
+
 ## Settings
 
 `.github/browser-review-gate.yml`. Every key is optional; an unknown key or a malformed value is an error, never silently ignored. **Enforced** settings are checked by the gem; **agent** settings are instructions the agent receives through `verify` and `status`.
 
 ```yaml
+assessment: ci                       # ci | local, see "Two modes"
+
 environments:
   local:
     url: "http://localhost:3000"     # what the agent opens

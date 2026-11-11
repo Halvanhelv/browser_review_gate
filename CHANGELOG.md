@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- `assessment: local`: CI calls no model and needs no secret. Any PR touching more than
+  `ignore_paths` owes a run; the author's agent chooses the scenarios (the settings' mandatory ones
+  included) or publishes `"not_required": { "reason": ... }`, which the PR shows. A run counts for the
+  head commit, or an earlier one when only ignored paths changed since. `ci` stays the default.
+- `status` and `verify` say which mode is in force; `verify` tells a local-mode agent to choose the
+  scenarios. `doctor` does not ask for a model secret in local mode.
+
 ## 0.4.2
 
 - Evidence files are kept in the git directory only once a run is accepted; a refused run leaves

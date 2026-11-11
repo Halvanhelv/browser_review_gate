@@ -64,8 +64,13 @@ module BrowserReviewGate
     def self.run_instructions(status)
       environment = status["environment"] || {}
       scenarios = status["scenarios"]
-      list = scenarios.any? ? scenarios.map { |scenario| "  - #{scenario["id"]} [#{scenario["status"]}] #{scenario["name"]}" } :
-                              [ "  - none listed by CI yet: choose them from the diff and #{Prompts::RULES}" ]
+      list = scenarios.map { |scenario| "  - #{scenario["id"]} [#{scenario["status"]}] #{scenario["name"]}" }
+      if status["assessment"] == "local"
+        list << "  - and the scenarios you choose from the diff and #{Prompts::RULES} (assessment is local)"
+        list << "  If nothing the change does can be seen in a browser, publish a report with \"not_required\": {\"reason\": ...} and no cases."
+      elsif list.empty?
+        list << "  - none listed by CI yet: choose them from the diff and #{Prompts::RULES}"
+      end
       [ "A browser run is needed#{status["pull_request"] ? " for PR ##{status["pull_request"]}" : ""}.",
         "Environment: #{environment["name"] || "not configured"}#{environment["url"] ? " at #{environment["url"]}" : ""}.",
         "Scenarios to run in your browser tool, one case per id:", *list,

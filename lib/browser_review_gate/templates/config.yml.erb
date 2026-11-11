@@ -75,7 +75,16 @@ provenance:
   check_pages: true
   clock_skew_seconds: 300
 
-# Who assesses a PR in CI. Unset: the Claude Code CLI with a CLAUDE_CODE_OAUTH_TOKEN or
+# Who decides what a browser run must cover.
+# ci: a model in CI reads each PR, decides whether a run is needed and names the scenarios; the gate
+#     checks the published run against that list. Needs one of the secrets below.
+# local: no model in CI and no secret. A run is owed whenever a PR touches more than ignore_paths; the
+#     author's AI agent chooses the scenarios (plus scenarios.mandatory) and may report that no run is
+#     needed, with a reason shown in the PR. A run counts only for the head commit, or for an earlier
+#     one when only ignore_paths changed since. Weaker than ci: nobody checks the agent's choice.
+assessment: ci
+
+# Who assesses a PR in CI (assessment: ci). Unset: the Claude Code CLI with a CLAUDE_CODE_OAUTH_TOKEN or
 # ANTHROPIC_API_KEY secret; with only an OPENAI_API_KEY or GEMINI_API_KEY secret, that provider's API.
 # Set `provider` to claude-cli, anthropic, openai or gemini to choose; openai and gemini need `model`.
 provider:

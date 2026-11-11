@@ -20,6 +20,8 @@ module BrowserReviewGate
     CATEGORY_PATTERN = /\A[a-z][a-z0-9-]{0,31}\z/
     STATUS_MARKS = { "passed" => "x", "failed" => " ", "skipped" => " ", "blocked" => " ", "missing" => " ", "stale" => " " }.freeze
 
+    LOCAL_REASON = "This change can affect the browser, and the author's agent decides what to run."
+
     attr_reader :assessed_sha, :decision, :reason, :scenarios, :report_seen, :usage, :errors
 
     # Builds an assessment from the model's JSON answer, which is untrusted. `report_seen` is the
@@ -48,6 +50,12 @@ module BrowserReviewGate
       new("assessed_sha" => assessed_sha, "decision" => "not-required", "reason" => reason)
     end
 
+    # `assessment: local`: no model. A run is owed whenever the change touches more than ignored paths;
+    # the author's agent picks the scenarios, and the settings' mandatory ones are listed here.
+    def self.local(assessed_sha:, mandatory:)
+      new("assessed_sha" => assessed_sha, "decision" => "required", "reason" => LOCAL_REASON, "scenarios" => mandatory, "mode" => "local")
+    end
+
     # The newest valid assessment the gate workflow wrote on the PR, or nil.
     def self.latest(comments)
       comment = latest_comment(comments)
@@ -72,6 +80,7 @@ module BrowserReviewGate
       @reason = data["reason"].is_a?(String) ? data["reason"].split.join(" ")[0, MAX_REASON] : nil
       @report_seen = data["report_seen"].is_a?(String) ? data["report_seen"] : nil
       @usage = read_usage(data["usage"])
+      @mode = data["mode"] == "local" ? "local" : "ci"
       @errors = []
       @scenarios = required? ? read_scenarios(data["scenarios"]) : []
       validate
@@ -80,6 +89,7 @@ module BrowserReviewGate
     def valid? = errors.empty?
     def required? = decision == "required"
     def for?(sha) = assessed_sha == sha
+    def local? = @mode == "local"
 
     # The scenarios no counting case of the report exercises yet. With `commits`, only cases tested on
     # those commits count; with `reuse_passing` false, only cases tested on the assessed commit.
@@ -91,10 +101,16 @@ module BrowserReviewGate
 
     # A report covers the change when it is complete, nothing failed (unless failures do not block),
     # and every scenario has a counting case.
-    def covered_by?(report, commits: nil, reuse_passing: true)
+    #
+    # In local mode nobody but the agent names the scenarios, so the report must also be fresh: run on
+    # this commit, or on an earlier one with only ignored paths changed since (`fresh`, worked out by
+    # the caller from the PR). It must pass a case of its own or say why no run is needed.
+    def covered_by?(report, commits: nil, reuse_passing: true, fresh: true)
       return false unless required? && report&.passed?
+      return false unless outstanding(report, commits: commits, reuse_passing: reuse_passing).empty?
+      return true unless local?
 
-      outstanding(report, commits: commits, reuse_passing: reuse_passing).empty?
+      fresh && (report.not_required? || report.passed_ids(commits: commits).any?)
     end
 
     # Whether this decision already accounts for the report, so the model need not be asked again.
@@ -104,7 +120,7 @@ module BrowserReviewGate
 
     def to_h
       { "assessed_sha" => assessed_sha, "decision" => decision, "reason" => reason, "scenarios" => scenarios,
-        "report_seen" => report_seen, "usage" => usage }.compact
+        "report_seen" => report_seen, "usage" => usage, "mode" => local? ? "local" : nil }.compact
     end
 
     # `verified` is true when a report covers the browser behavior of this commit. `command` is what the
@@ -134,6 +150,8 @@ module BrowserReviewGate
     end
 
     def checklist(report, commits)
+      return local_checklist(report) if local? && scenarios.empty?
+
       lines = scenarios.map do |scenario|
         status = report ? report.status_of(scenario["id"], commits: commits) : "missing"
         flags = [ scenario["priority"] == "critical" ? "critical" : nil, scenario["category"] ].compact.join(", ")
@@ -142,6 +160,12 @@ module BrowserReviewGate
           "#{flags.empty? ? "" : " (#{Markdown.escape(flags)})"}#{why}"
       end
       [ "Scenarios the run must pass:", "", *lines, "" ]
+    end
+
+    def local_checklist(report)
+      done = report&.not_required? ? "the author's agent judged that no run is needed" :
+             report ? "#{report.passed_ids.size} passing cases published" : "no run published yet"
+      [ "The author's AI agent chooses the scenarios from the diff and the project rules (#{done}).", "" ]
     end
 
     # Scenario ids become report case ids, so they follow the same pattern.

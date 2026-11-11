@@ -21,6 +21,9 @@ module BrowserReviewGate
       "status_context" => "browser-verification",
       "command" => "/browser-pr-verification",
       "workflow" => "browser-review-gate.yml",
+      # Who decides what a browser run must cover: "ci" (a model in CI reads the diff and names the
+      # scenarios) or "local" (the author's agent chooses them; CI calls no model and needs no secret).
+      "assessment" => "ci",
       # Who assesses a PR: claude-cli, anthropic, openai or gemini. Unset: chosen from the credentials.
       "provider" => nil,
       "model" => nil,
@@ -48,6 +51,7 @@ module BrowserReviewGate
       "provenance" => { "trace" => "off", "revision_header" => "X-App-Revision", "check_pages" => true, "clock_skew_seconds" => 300 }
     }.freeze
     TRACE_MODES = %w[off warn require].freeze
+    ASSESSMENTS = %w[ci local].freeze
 
     ENVIRONMENT_KEYS = %w[url healthcheck start_command sign_in].freeze
     MANDATORY_KEYS = %w[id name why paths matrix].freeze
@@ -97,6 +101,7 @@ module BrowserReviewGate
     def scenarios = @sections["scenarios"]
     def gate = @sections["gate"]
     def provenance = @sections["provenance"]
+    def local? = assessment == "local"
 
     # The environment a run uses: the one named, the configured default, or the only one there is.
     def environment(name = nil)
@@ -187,6 +192,7 @@ module BrowserReviewGate
           raise Error, "#{PATH}: environments.#{name}.healthcheck must be a path starting with / or an http(s) URL"
         end
       end
+      raise Error, "#{PATH}: assessment must be ci or local" unless ASSESSMENTS.include?(assessment)
       environment # the configured default must exist
       validate_flags
       validate_evidence

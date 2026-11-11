@@ -50,11 +50,27 @@ module BrowserReviewGate
 
       existing = Assessment.latest(comments)
       assessed_before = existing&.for?(head_sha)
-      assessment = assessed_before && existing.settles?(report) ? existing : propose(number, pull_request, head_sha, report)
+      assessment = if @config.local?
+                     propose_locally(number, head_sha)
+                   else
+                     assessed_before && existing.settles?(report) ? existing : propose(number, pull_request, head_sha, report)
+                   end
       publish(number, assessment, pull_request, comments, report, commits, new_commit: !assessed_before)
       assessment
     rescue KeyError => error
       raise Error, "Browser assessment data is incomplete: #{error.message}"
+    end
+
+    # `assessment: local`: the decision without a model. Cheap, so it is made on every event, and by
+    # local commands when CI has not written it yet.
+    def propose_locally(number, head_sha)
+      paths = @github.files(number).map { |file| file["filename"] }
+      mandatory = @config.mandatory_scenarios(paths)
+      if mandatory.none? { |scenario| scoped?(scenario) } && paths.all? { |path| @config.ignored?(path) }
+        return Assessment.not_required(IGNORED_REASON, assessed_sha: head_sha)
+      end
+
+      Assessment.local(assessed_sha: head_sha, mandatory: mandatory)
     end
 
     private
@@ -95,7 +111,8 @@ module BrowserReviewGate
     # Ordinary commits keep the label; it goes only when the report does not cover the commit.
     def publish(number, assessment, pull_request, comments, report, commits, new_commit:)
       labelled = pull_request.fetch("labels").any? { |label| label["name"] == @config.label }
-      covered = assessment.covered_by?(report, commits: commits, reuse_passing: @config.scenarios["reuse_passing"])
+      fresh = assessment.local? && Freshness.new(github: @github, config: @config).fresh?(report, assessment.assessed_sha)
+      covered = assessment.covered_by?(report, commits: commits, reuse_passing: @config.scenarios["reuse_passing"], fresh: fresh)
       run_owed = assessment.required? && !(labelled && covered)
       @github.remove_label(number, @config.label) if run_owed && labelled
 

@@ -17,7 +17,7 @@ module BrowserReviewGate
     CAPABILITIES = %w[screenshots trace console network].freeze
     URL_PATTERN = %r{\A(?:https?://|/)\S*\z}
     TOP_KEYS = %w[schema_version tested_sha verified_by environment tool started_at finished_at coverage_complete
-                  cases excluded runs failed_runs].freeze
+                  cases excluded runs failed_runs not_required].freeze
     CASE_KEYS = %w[id name result url details reason evidence tested_sha verified_by environment tool].freeze
     EVIDENCE_KEYS = %w[files console_errors network_errors links trace_check].freeze
     FILE_KEYS = %w[kind name media_type bytes sha256].freeze
@@ -75,6 +75,11 @@ module BrowserReviewGate
     def runs = @data["runs"].is_a?(Integer) ? @data["runs"] : 0
     def failed_runs = @data["failed_runs"].is_a?(Integer) ? @data["failed_runs"] : 0
     def coverage_complete? = @data["coverage_complete"] == true
+
+    # With `assessment: local`, the author's agent may judge that the change needs no browser run. The
+    # reason is shown in the PR for the reviewer to weigh.
+    def not_required_reason = @data["not_required"].is_a?(Hash) ? @data["not_required"]["reason"] : nil
+    def not_required? = !not_required_reason.nil?
     def to_h = JSON.parse(JSON.generate(@data))
 
     # Seconds the run took, when the agent gave both times.
@@ -119,7 +124,7 @@ module BrowserReviewGate
 
     # Complete, and nothing failed when failures block review.
     def passed?
-      valid? && coverage_complete? && (!@config.gate["block_on_failure"] || !failed?)
+      valid? && (coverage_complete? || not_required?) && (!@config.gate["block_on_failure"] || !failed?)
     end
 
     # Changes whenever a case is added, re-run or changes its outcome.
@@ -154,8 +159,9 @@ module BrowserReviewGate
       lines = [ "## Browser verification", "",
         "Verified by **#{Markdown.escape(verified_by)}** for commit `#{tested_sha}` in the `#{environment}` environment " \
         "with #{tool_name}#{timing}. #{coverage}", "",
-        "| Case | Result | Page | Commit | Evidence |", "|---|---|---|---|---|" ]
+        *(cases.any? ? [ "| Case | Result | Page | Commit | Evidence |", "|---|---|---|---|---|" ] : []) ]
       lines.concat(cases.map { |test_case| markdown_case(test_case, commits) })
+      lines.concat([ "", "**The author's agent judged that no browser run is needed:** #{Markdown.escape(not_required_reason)}" ]) if not_required?
       details = cases.select { |test_case| test_case["details"] || test_case["reason"] }
       lines.concat([ "", "<details><summary>What the agent observed</summary>", "" ] +
         details.map { |test_case| "- `#{test_case["id"]}`: #{Markdown.escape([ test_case["details"], test_case["reason"] ].compact.join(" "))}" } +
@@ -240,6 +246,7 @@ module BrowserReviewGate
       validate_tool
       validate_times
       validate_cases
+      validate_not_required if @data["cases"] != []
       validate_excluded
       %w[runs failed_runs].each do |key|
         errors << "#{key} must be a whole number" unless @data[key].nil? || (@data[key].is_a?(Integer) && @data[key] >= 0)
@@ -272,7 +279,16 @@ module BrowserReviewGate
       errors << "finished_at must not be before started_at" if times["finished_at"] < times["started_at"]
     end
 
+    def validate_not_required
+      value = @data["not_required"]
+      return if value.nil?
+      return if value.is_a?(Hash) && value.keys == [ "reason" ] && text?(value["reason"], 300)
+
+      errors << "not_required must be { \"reason\": \"why no browser run is needed\" }"
+    end
+
     def validate_cases
+      return validate_not_required if @data["not_required"] && @data["cases"] == []
       return errors << "cases must be a non-empty array" unless @data["cases"].is_a?(Array) && cases.any?
       return errors << "cases must have at most 60 entries" if cases.size > 60
 
