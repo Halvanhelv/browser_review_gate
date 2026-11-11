@@ -2,41 +2,143 @@
 
 Keeps human review of a pull request behind a browser run of its browser-visible changes.
 
-- CI reads each PR and decides whether it changes what a person sees or does in a browser. The decision goes into one PR comment, together with the scenarios a browser run must pass.
+- CI reads each PR and decides whether it changes what a person sees or does in a browser. The decision goes into one PR comment, together with the scenarios a browser run must pass and why each one is needed.
 - When a run is needed and none is published, reviewer requests are taken back and the PR says which command to run.
-- An AI coding agent (Claude Code, Cursor, Codex) runs the scenarios in a real browser and publishes what it observed: for each case, the page and what was seen there. A complete passing run adds the `browser-verified` label, and review requests stay.
-- CI compares the published cases with its own list. A run that leaves a scenario out does not open review.
+- An AI coding agent (Claude Code, Cursor, Codex) runs the scenarios in a real browser with its own browser tool and publishes what it observed, with evidence: screenshots, traces, console errors and failed requests.
+- The gem checks the report strictly, compares its cases with CI's list, and opens review only when every scenario has a case that counts.
+
+**What it is not.** The gem is an orchestration and enforcement layer. It does not drive a browser and ships no browser runtime: the agent does the run with Playwright, Chrome DevTools MCP or whatever browser tool it has. The gem decides what must be run, checks what the agent reports, and keeps review on hold until the report covers the change.
 
 ## Install
 
 ```sh
 bundle add browser_review_gate --group development
 bundle exec browser-review-gate install
+bundle exec browser-review-gate doctor
 ```
 
-In a Rails app the same thing is `bin/rails generate browser_review_gate:install`.
+In a Rails app the install step is also `bin/rails generate browser_review_gate:install`.
 
-One run sets up everything and can be repeated after a gem update:
+One run sets up everything and can be repeated after a gem update (it is idempotent and leaves files you wrote alone unless you pass `--force`):
 
 | File | Purpose |
 |---|---|
 | `.github/workflows/browser-review-gate.yml` | Assesses PRs and takes back premature reviewer requests |
-| `.github/browser-review-gate.yml` | Settings: how to start the app, what is never gated, which paths cannot touch the browser |
-| `.github/browser-review-gate/rules.md` | Your application's rules: what always gets checked, scenarios by area |
+| `.github/browser-review-gate.yml` | Settings (see below) |
+| `.github/browser-review-gate/rules.md` | Your application's rules in plain language, read by the model and the agent |
 | `docs/browser-review-gate.md` | The playbook every agent follows |
 | `.claude/skills/browser-pr-verification/SKILL.md`, hook in `.claude/settings.json` | Claude Code |
 | `.cursor/commands/browser-pr-verification.md`, hook in `.cursor/hooks.json` | Cursor |
-| Section in `AGENTS.md`, hook in `.codex/hooks.json` | Codex (the `AGENTS.md` section also serves other agents that read it) |
+| Section in `AGENTS.md`, hook in `.codex/hooks.json` | Codex and other agents that read `AGENTS.md` |
 
-The installer detects which agents the project uses (`.claude/` or `CLAUDE.md`, `.cursor/` or `.cursorrules`, `.codex/` or `AGENTS.md`) and sets up all of them. Choose explicitly with `--agents claude,cursor,codex`. Preview with `--dry-run`. Files you wrote yourself are never replaced without `--force`.
+The installer detects which agents the project uses and sets up all of them; choose with `--agents claude,cursor,codex`, preview with `--dry-run`.
 
 Then:
 
-1. Add one secret to the repository: `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` (see "Who assesses a PR").
-2. Fill `start_command`, `url` and `sign_in` in `.github/browser-review-gate.yml`.
+1. Add one secret to the repository: `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY`.
+2. Describe your environments in `.github/browser-review-gate.yml`.
 3. Merge to the default branch. The workflow uses `pull_request_target`, so it runs from there.
+4. Optionally make the `browser-verification` status a required check so the gate also blocks merging.
 
-CI installs the gem from RubyGems. It can also take it from a git repository (`--gem-source "git:https://host/owner/browser_review_gate.git#v0.2.0"`) or from a copy kept in the project (`--gem-source path:vendor/browser_review_gate`).
+`browser-review-gate doctor` checks all of it and says what to fix.
+
+## How a PR goes through
+
+1. The author runs `/browser-pr-verification` (the agent command) on the branch. The agent runs `browser-review-gate verify --json`, which says what to run, in which environment, and whether the app answers.
+2. The agent runs the scenarios in its browser tool, writes a report with evidence next to it, and runs `browser-review-gate verify --report PATH`. Before the PR exists the run is saved for that commit; afterwards it is published.
+3. When the PR is opened, the agent's post-command hook publishes the saved run.
+4. CI assesses the PR, adds the project's mandatory scenarios, and matches the published cases against the list. When every scenario has a counting case, reviewer requests stay; reviewers taken back earlier are asked again automatically.
+
+Later commits keep the verification unless they add a scenario no counting case covers; then only the new scenarios need to run (`scenarios.reuse_passing`).
+
+## Settings
+
+`.github/browser-review-gate.yml`. Every key is optional; an unknown key or a malformed value is an error, never silently ignored. **Enforced** settings are checked by the gem; **agent** settings are instructions the agent receives through `verify` and `status`.
+
+```yaml
+environments:
+  local:
+    url: "http://localhost:3000"     # what the agent opens
+    healthcheck: "/up"               # path on url, or a full URL; what verify/doctor ask
+    start_command: "bin/dev"         # what the person runs; nothing starts the app automatically
+    sign_in: "Use the seed accounts from db/seeds.rb"
+  staging:
+    url: "https://staging.example.com"
+    healthcheck: "/up"
+
+verification:
+  environment: local                 # default; override with --environment
+  fail_on_console_errors: true       # enforced
+  fail_on_network_errors: false      # enforced
+
+evidence:
+  screenshots: on_failure            # agent: never | on_failure | always; enforced with gate.require_evidence
+  trace: never                       # agent: never | on_failure | always; enforced with gate.require_evidence
+  console_logs: true                 # agent; enforced with gate.require_evidence
+  network_logs: true                 # agent; enforced with gate.require_evidence
+  retention_days: 14                 # enforced: saved runs and kept evidence in .git are pruned
+  link_hosts: ["artifacts.example.com"]  # enforced: hosts evidence links may point to
+
+scenarios:
+  max_count: 12                      # enforced: most scenarios the model may ask for (1-30)
+  reuse_passing: true                # enforced: earlier passing cases on PR commits keep counting
+  mandatory:                         # enforced: added by the gem, not proposed by the model
+    - id: SIGN-IN
+      name: Sign in and land on the dashboard
+      why: Authentication changes must keep sign-in working.
+      paths: ["app/controllers/sessions_controller.rb", "app/views/sessions/**"]
+      matrix: true
+  matrix:                            # enforced: at most 24 mandatory cases after expansion
+    role: [admin, member]
+    viewport: [desktop, mobile]
+
+gate:
+  require_evidence: false            # enforced: passing cases need the evidence asked for above
+  block_on_failure: true             # enforced: any failing case keeps review on hold
+```
+
+Other keys: `provider` and `model` (who assesses, see below), `workflow`, `label`, `waiver_label`, `waiver_by_author`, `status_context`, `command`, `skip_authors`, `skip_branch_prefixes`, `ignore_paths`.
+
+**Environments.** A local agent uses `local`. A cloud agent cannot reach `localhost`: give it an environment it can reach (staging, a preview deployment) and run `verify --environment staging`. `url` is what the agent opens; `healthcheck` may point elsewhere, for example a full health URL behind the same host. Put no credentials in this file: it is in the repository, and its values appear in `verify` output.
+
+**Mandatory scenarios and matrices.** A mandatory entry with `paths` makes a run required whenever the change touches those paths, whatever the model decides. Without `paths` it is added to every run that is required. `matrix: true` repeats it for every combination of the matrix, as ids such as `SIGN-IN.admin.mobile`, so the gate can tell exactly which combination is missing.
+
+**Not configurable on purpose.** Run timeouts and retries are not settings: the browser run happens in the agent, and the gem cannot enforce them. Tell the agent in `rules.md` if you have expectations.
+
+## Reports
+
+A report is JSON in the shape the playbook describes (`schema_version: 2`): the tested commit (full SHA), the environment, the browser tool and its capabilities, start and finish times, and one case per scenario with `result` (`pass`, `fail`, `blocked`, `skipped`), the page, what was observed, and evidence.
+
+- Screenshots (`.png`, `.jpg`, `.webp`) and traces (`.zip`) are read from the report's directory. Paths that leave it, links, wrong file types (checked by content, not just name) and files over 20 MB are refused. Accepted files are hashed and kept in the git directory; the PR shows their names, sizes and SHA-256 digests, not the files.
+- Console errors and failed requests are trimmed, query strings are dropped, and values that look like credentials are masked.
+- Evidence links are accepted only on hosts listed in `evidence.link_hosts`; use them to point reviewers at screenshots you uploaded to your own artifact store.
+- A case counts when it passes, breaks no enforced policy, and was tested on a commit of the PR.
+
+The PR comment shows every scenario as passed, failed, blocked, skipped, missing or stale, the environment and tool, the tested commit of each case, and the evidence. It says plainly that observations are the agent's account.
+
+## Commands
+
+```
+browser-review-gate install [--agents LIST] [--gem-source SOURCE] [--workflow NAME] [--force] [--dry-run]
+browser-review-gate eject policy|playbook       copy a built-in text into the project to rewrite it
+browser-review-gate doctor [--json]             check the setup; PASS, WARN, FAIL or SKIP with a fix
+browser-review-gate verify [--pr N] [--environment NAME] [--report PATH] [--no-request] [--json]
+browser-review-gate status [--pr N] [--environment NAME]   the raw facts verify works from, as JSON
+browser-review-gate publish [--pr N] [--report PATH]
+browser-review-gate save --report PATH
+browser-review-gate request-assessment N
+browser-review-gate hook claude|cursor|codex    post-command hook
+browser-review-gate ci N                        what the workflow runs
+browser-review-gate stats [--days N] [--json]   what the gate did on recent PRs
+```
+
+`verify` exit statuses: 0 nothing to do or published and verified; 2 a run is needed; 3 the environment does not answer; 4 an assessment was requested or is missing; 5 check out the PR head, or open the PR; 6 a saved run waits; 7 published but not verified; 1 error.
+
+`doctor` checks Ruby, the executable, the repository, the settings, `gh` and its sign-in, your push access, each environment's health check, agent files and hooks, a browser tool configured in the project, the workflow and its version, whether the status is a required check, and whether a model secret exists (by name). What it cannot see from your machine is SKIP, never PASS.
+
+`stats` counts PRs assessed, needing a run, verified, waived and still owing one; published runs and runs with a failure; scenarios that are failing; the median time from opening a PR to its verified run; and the token usage and cost of the latest assessment of each PR, only as the provider reported them. The Claude Code CLI reports cost; the APIs report tokens only, so no cost is shown for them.
+
+Local commands need the `gh` CLI, signed in.
 
 ## Who assesses a PR
 
@@ -44,73 +146,43 @@ The assessment is one model call without tools. Which model makes it follows fro
 
 | Secret | What runs |
 |---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` | The Claude Code CLI, as before |
-| only `OPENAI_API_KEY` | The OpenAI API; set `model` in the settings file |
-| only `GEMINI_API_KEY` | The Gemini API; set `model` in the settings file |
+| `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` | The Claude Code CLI |
+| only `OPENAI_API_KEY` | The OpenAI API; set `model` |
+| only `GEMINI_API_KEY` | The Gemini API; set `model` |
 
-Set `provider` in `.github/browser-review-gate.yml` to `claude-cli`, `anthropic`, `openai` or `gemini` to choose explicitly. `anthropic` calls the Anthropic API directly with `ANTHROPIC_API_KEY`, without installing the CLI in CI.
+Set `provider` to `claude-cli`, `anthropic`, `openai` or `gemini` to choose explicitly. When the call fails, review stays on hold.
 
 ## Fitting it to your application
 
-The gem ships with a general decision policy and a general playbook. There are two ways to make them yours.
+**Add rules.** Write under the headings of `.github/browser-review-gate/rules.md` in plain language: when a run is needed, what every run checks, which scenarios each area needs, which accounts and data to use. The model reads them when it assesses; the agent reads them when it picks scenarios. Use `scenarios.mandatory` and `scenarios.matrix` for anything that must not depend on a model following instructions.
 
-**Add rules (recommended).** Write under the headings of `.github/browser-review-gate/rules.md`, in plain language:
+**Replace the built-in text.** `eject policy` copies the decision policy to `.github/browser-review-gate/policy.md`; `eject playbook` hands `docs/browser-review-gate.md` over to the project.
 
-- when a browser run is needed in this application;
-- what every run always checks, such as roles or window sizes;
-- which scenarios each area needs;
-- which accounts and data to use.
+## Security
 
-CI reads the rules when it decides whether a PR needs a run and whether a published run still covers it. The agent reads them when it picks scenarios. The built-in policy stays in force and gets updates with the gem; your rules are added on top and win where they disagree. The generated file contains only commented examples and changes nothing until you write in it.
+- The workflow runs on `pull_request_target` from the base branch with `contents: read`, `issues: write`, `pull-requests: write` and `statuses: write`. PR code is never checked out or executed; the diff is read through the API as data. Only the PR number reaches the shell.
+- Settings, rules and the policy are read from the base branch in CI, so a PR cannot change the rules of its own assessment. Local commands read the settings from `origin/HEAD` when it has them, so a PR branch cannot point the agent at another URL or loosen the policy for its own run (`settings_source` in `verify --json` says which was used).
+- The assessing model gets the PR as escaped data with no tools and answers in a fixed JSON schema; the gem validates the answer and does every write. An invalid answer or a failed call keeps review on hold.
+- The decision comment counts only from `github-actions[bot]`; a report counts only from someone with push access. Anyone else's comments are ignored as evidence.
+- Reports are validated strictly; evidence paths are confined to the report directory, symbolic links are refused, file types are checked by content, and logged URLs and messages are scrubbed.
+- Health checks go only to http(s) URLs from the settings, with a HEAD request, short timeouts and no redirects.
 
-**Replace the built-in text.** `browser-review-gate eject policy` copies the decision policy to `.github/browser-review-gate/policy.md`; `browser-review-gate eject playbook` hands `docs/browser-review-gate.md` over to the project. From then on the gem uses your copy and stops updating it. The frame around the policy — the model's role, the rule that PR content is data, the answer format — is not ejectable.
+Residual risks, stated plainly:
 
-CI reads all of these from the base branch, so a pull request cannot loosen its own rules.
+- **A report is the agent's account, not an attestation.** Someone with push access, or an agent that misreports, can publish a passing report for a run that did not happen. The gem raises the cost (exact scenario ids, pages, observations, evidence digests, commit checks) but cannot prove a browser did anything. Human review remains the control.
+- **Evidence files stay local.** Reviewers see digests, not screenshots, unless you upload them and link them through `evidence.link_hosts`.
+- **Scrubbing is pattern-based.** It catches common credential shapes, not everything. Agents are told not to record secrets; screenshots and traces are never inspected.
+- **A taken-back review request may still notify the reviewer**, because GitHub has no way to refuse a request.
+- **GitHub lists at most 250 commits of a PR**; on longer PRs, cases from older commits stop counting.
+- **The gate does not block merging by itself.** Make the status a required check for that.
 
-## How a PR goes through
+## Upgrading from 0.2
 
-1. The author runs `/browser-pr-verification` on the branch before opening the PR. The agent picks the scenarios, runs them and saves the results for that commit inside the git directory.
-2. The PR is opened. In Claude Code, Cursor and Codex a hook publishes the saved results right after `gh pr create` (Codex asks you to trust the hook once in `/hooks`). Anywhere else, the command from the PR comment publishes them without a new run.
-3. CI writes its own list of scenarios and matches the published cases against it. When every scenario has a passing case, reviewer requests stay in place. Otherwise the label goes and the comment ticks what passed and lists what is left.
+0.3 changes the report format and the settings; nothing from 0.2 is read.
 
-If the PR is opened without a run, the comment shows the scenarios and the ready command, for example `/browser-pr-verification 42`. The agent runs exactly that list and reports each case under the scenario's id.
-
-A draft PR is not assessed until it is marked ready for review; run the command on a draft to have it assessed earlier.
-
-Later commits keep the label unless they add a scenario the published run has no passing case for. Then only the new scenarios need to run.
-
-A report counts only when it comes from someone who can push to the repository, and every submitted case must name the page it was exercised on (`url`) and what was observed (`details`).
-
-## Commands
-
-```
-browser-review-gate install                     set the project up
-browser-review-gate eject policy|playbook       copy a built-in text into the project to rewrite it
-browser-review-gate status [--pr N]             what the PR needs and what to do next, as JSON
-browser-review-gate publish [--pr N] [--report PATH]
-browser-review-gate save --report PATH          keep results until the PR is opened
-browser-review-gate request-assessment N        assess a PR that has no decision yet
-browser-review-gate hook [claude|cursor|codex]  post-command hook
-browser-review-gate ci N                        what the workflow runs
-browser-review-gate stats [--days N]            what the gate did on recent PRs
-```
-
-Local commands need the `gh` CLI, signed in.
-
-## Less friction
-
-- **Reviewers come back on their own.** A request taken back is remembered; once the run is published, the same people are asked again.
-- **A waiver for what cannot be run.** Someone other than the author adds the `browser-verification-waived` label and review proceeds without a run.
-- **A status next to the checks.** `browser-verification` is pending while a run is owed and green otherwise. Make it a required check if you want it to block merging.
-- **Nothing is forced.** Opening a PR never requires a run. The PR comment says when one is needed and how to do it; it only becomes necessary when the author wants a reviewer.
-- **The agent does not start your app.** It uses the one that is running and asks you to start it otherwise.
-
-## What it does not do
-
-- It cannot refuse a review request. GitHub has no such switch, so the request is taken back seconds after it is made, and the reviewer may still get a notification.
-- It does not watch the browser. The cases, their pages and what was observed are the agent's own account; the gem checks that every scenario CI asked for is reported as passed, not that it happened.
-- It does not block merging by itself. Make the `browser-verification` status a required check for that.
-- The model that assesses a PR sees the diff as data, has no tools, and answers in a fixed JSON shape. The gem validates the answer and does every write. PR code is never checked out or run in CI.
+- Move `url`, `start_command` and `sign_in` under `environments.local`.
+- Re-run `browser-review-gate install` to update the workflow, the playbook and the agent files.
+- Reports published by 0.2 do not count any more: PRs that were verified with one need a new run, or a waiver.
 
 ## Development
 

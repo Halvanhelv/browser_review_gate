@@ -1,5 +1,5 @@
 <!-- browser_review_gate:start -->
 ## Browser verification before human review
 
-A PR that changes browser-visible behavior needs a browser run before a human reviews it; CI takes back reviewer requests until one is published. When asked to run `<%= command %>` (with or without a PR number), or to verify a branch or PR in the browser, read `<%= playbook_path %>` and follow it exactly. Right after opening a PR with `gh pr create`, run `browser-review-gate publish` if `browser-review-gate status` says `publish_saved`.
+A PR that changes browser-visible behavior needs a browser run before a human reviews it; CI takes back reviewer requests until one is published. When asked to run `<%= command %>` (with or without a PR number), or to verify a branch or PR in the browser, read `<%= playbook_path %>` and follow it exactly. Right after opening a PR with `gh pr create`, run `browser-review-gate verify`: it publishes a run saved for this commit.
 <!-- browser_review_gate:end -->

@@ -1,56 +1,94 @@
 <!-- browser_review_gate:managed <%= BrowserReviewGate::VERSION %> — re-run `browser-review-gate install` to update. -->
 # Browser verification before human review
 
-A pull request that changes what a person sees or does in a browser must be exercised in a browser before a human reviews it. CI decides whether a PR needs that and writes the decision in one "Browser verification" comment. Until a passing run is published, reviewer requests on such a PR are taken back.
+A pull request that changes what a person sees or does in a browser must be exercised in a browser before a human reviews it. CI decides whether a PR needs that and writes the decision in one "Browser verification" comment, with the scenarios a run must pass. Until a run covering them is published, reviewer requests on such a PR are taken back.
 
 This file is the playbook for the AI coding agent that does the run. The person starts it with `<%= command %> NUMBER` for an open PR, or `<%= command %>` on a branch that has no PR yet.
 
+**Who does what.** You, the agent, drive the browser with your browser tool (Playwright, Chrome DevTools MCP or similar) and write down what you saw. `browser-review-gate` does the bookkeeping: which scenarios are owed, which environment to use, whether the app answers, and checking and publishing your report. It never drives a browser, and it cannot see what you did: your report is your account, so it must be accurate.
+
 ## Steps
 
-1. Run `browser-review-gate status` (add `--pr NUMBER` when a number was given). It prints JSON; follow `next`:
-   - `nothing`: no run is needed, or the PR is already verified. Say that review can be requested.
+1. Run `browser-review-gate verify --json` (add `--pr NUMBER` when a number was given, `--environment NAME` when the person named one). Follow `outcome`:
+   - `nothing`: no run is needed, or the PR is already verified or waived. Say that review can be requested.
    - `check_out_pr_head`: check out the PR head with a clean worktree, then start again.
-   - `request_assessment`: run `browser-review-gate request-assessment NUMBER`, wait about a minute, then start again.
-   - `publish_saved`: a run saved for this commit exists. Run `browser-review-gate publish` and stop; nothing runs again.
+   - `assessment_requested`: CI was asked to assess the PR. Wait about a minute, then start again.
+   - `published` / `not_verified`: a run saved for this commit was published. Report the result and stop.
    - `open_pull_request`: a run is saved and waits for the PR. Tell the person to open it.
-   - `ask_to_start_app`: the app is not running. Do not start it yourself: ask the person to start it (`app.start_command` says how) and stop until they have.
+   - `ask_to_start_app`: the environment does not answer. Do not start it yourself: ask the person to start it (`environment.start_command` says how) and stop until they have.
    - `run_and_publish` or `run_and_save`: continue with step 2.
 2. Decide what to run.
-   - `scenarios` in the status output is the list CI wrote for this PR. Run every one of them, and give each case the `id` of its scenario. You may add cases of your own; you may not drop or rename one from the list.
-   - With no PR yet, or an empty list, choose the scenarios yourself: read the diff against the base branch, then `<%= rules_path %>`, which says what this project always checks and which scenarios each area needs. Its rules are mandatory. CI compares your cases with its own list once the PR is open and asks for what is missing.
-   - Do not re-run behavior an earlier passing case still covers.
-3. Open the running app in a browser tool. `app` in the status output gives the URL and a sign-in hint. Never start, restart or stop the app yourself: what runs on the person's machine is their decision. Use local test data and do not destroy existing data. If the app, the data, or a browser tool is missing, report the blocker. Reading code and running unit tests does not replace a browser run.
-4. Run every scenario end to end. After key actions check the page state, console errors, and failed requests. For each case record the page it was exercised on (`url`) and what you observed there, including console errors and failed requests (`details`). A case without both is refused. A skipped or blocked scenario is not a pass.
-5. Write the report as JSON outside the repository (see the shape below). Set `coverage_complete` to true only when every scenario from step 2 ran. CI checks the report against its list by case `id`: a missing scenario takes the label away again.
-6. Publish or save, from the checkout that was tested, with everything committed and pushed:
-   - PR exists: `browser-review-gate publish --report PATH` (add `--pr NUMBER` when the branch has several). It posts the cases with their outcomes. Only a complete all-pass report adds the `<%= label %>` label.
-   - No PR yet: `browser-review-gate save --report PATH`. The run is published when the PR for this commit is opened. A new commit makes it stale.
-7. Check the command result and the PR. A non-zero exit can still mean a report was posted: a failing or incomplete report is visible in the PR and review stays closed.
-8. Request a reviewer only when the person named one and only after the run passed. Reviewers whose requests CI took back earlier are asked again automatically. Otherwise say that review can be requested.
+   - `scenarios` is the list CI wrote for this PR, with each one's `status` (`missing`, `failed`, `blocked`, `skipped`, `stale`). Run every one of them and give each case the `id` of its scenario. Scenarios marked `critical` or in the `mandatory` category come from the project settings; they cannot be left out. You may add cases of your own; you may not drop or rename one from the list.
+   - With no PR yet, or an empty list, choose the scenarios yourself: read the diff against the base branch, then `<%= rules_path %>`, which says what this project always checks. Its rules are mandatory. CI compares your cases with its own list once the PR is open and asks for what is missing.
+   - Do not re-run a scenario whose earlier case still counts; `verify` lists only what is owed.
+3. Open `environment.url` in your browser tool. `environment.sign_in` is a sign-in hint. Never start, restart or stop the app yourself. Use test data and do not destroy existing data. If the app, the data or a browser tool is missing, report the blocker. Reading code and running unit tests does not replace a browser run.
+4. Run every scenario end to end. For each case record:
+   - `url`: the page it was exercised on; `details`: what you observed;
+   - evidence, as `policy.agent` in the `verify` output asks: screenshots (`never`, `on_failure`, `always`), a trace, and the console errors and failed requests you saw (`[]` when there were none). Save files in a directory outside the repository, next to the report.
+   - A scenario you could not run is `blocked` (something prevented it) or `skipped` (deliberately not run), with a `reason`. Neither is a pass.
+5. Write the report as JSON next to the evidence (see the shape below). Set `coverage_complete` to true only when every scenario from step 2 ran.
+6. Publish, from the checkout that was tested, with everything committed and pushed: `browser-review-gate verify --report PATH` (add `--pr NUMBER` when the branch has several PRs). With a PR it is published; without one it is saved and published when the PR for this commit is opened.
+7. Check the result. Exit status 0 means review can proceed; 7 means the report was published but review stays on hold (a scenario is missing, failed, or broke a project policy); 1 means the report was refused, with the reason. A refused report is not published: fix it and publish again.
+8. Request a reviewer only when the person named one and only after the run passed. Reviewers whose requests CI took back earlier are asked again automatically.
+
+## What the gem checks, and what it cannot
+
+- It refuses a report with an unknown key, a missing field, an evidence path outside the report directory, a file that is not the image or archive its name says, a link to a host the project did not list, or a commit other than the checked-out one.
+- With `gate.require_evidence`, a passing case without the screenshots, trace or logs the project asks for does not count, unless your tool lacks that capability (say so in `tool.capabilities`).
+- With `verification.fail_on_console_errors` / `fail_on_network_errors`, a passing case that lists such errors counts as failed.
+- Only cases tested on a commit of this PR count.
+- It cannot tell whether a browser really did what you wrote. File digests show that files existed when the run was published, not who made them.
 
 ## When a scenario cannot be run
 
-Some scenarios cannot be exercised locally, for example a sign-in through an external provider. Do not mark the run complete and do not drop the scenario silently. Tell the person. They can list it under `excluded` in the report, or someone other than the author can put the `<%= waiver_label %>` label on the PR to let review proceed without a run.
+Some scenarios cannot be exercised locally, for example a sign-in through an external provider. Report it as `blocked` with the reason, or, when the person decided so, list it under `excluded`. Neither counts as a pass, so review stays on hold for that scenario: tell the person. Someone other than the author can put the `<%= waiver_label %>` label on the PR to let review proceed without a run.
 
 ## Report shape
 
 ```json
 {
-  "tested_sha": "<full commit SHA that was tested>",
+  "schema_version": 2,
+  "tested_sha": "<full 40-character SHA of the commit that was tested>",
+  "environment": "local",
+  "tool": { "name": "Playwright MCP", "version": "0.0.40", "capabilities": ["screenshots", "trace", "console", "network"] },
+  "started_at": "2026-11-11T10:00:00Z",
+  "finished_at": "2026-11-11T10:06:30Z",
   "coverage_complete": true,
   "cases": [
-    { "id": "BROWSER-1", "name": "The changed interaction completes", "result": "pass", "url": "/the/page/exercised", "details": "What was observed, with console errors and failed requests if any." }
+    {
+      "id": "BROWSER-1",
+      "name": "Submit the sign-up form and land on the dashboard",
+      "result": "pass",
+      "url": "/signup",
+      "details": "The form submitted; the dashboard showed the new account's name.",
+      "evidence": {
+        "screenshots": ["artifacts/signup-done.png"],
+        "trace": "artifacts/signup-trace.zip",
+        "console_errors": [],
+        "network_errors": []
+      }
+    },
+    {
+      "id": "SIGN-IN.member.mobile",
+      "name": "Sign in as a member at phone width",
+      "result": "blocked",
+      "reason": "The member seed account is missing from the local database.",
+      "details": "The sign-in form rejected the seed credentials."
+    }
   ],
   "excluded": [
-    { "name": "Sign-in through an external provider", "reason": "Needs a real provider account; covered by integration tests." }
+    { "id": "OAUTH-1", "name": "Sign-in through an external provider", "reason": "Needs a real provider account; covered by integration tests." }
   ]
 }
 ```
 
-`result` is `pass` or `fail`. `url` is an http(s) URL or a path starting with `/`. `excluded` is optional: list a scenario there only when the person decided it stays outside the local run. Never exclude a scenario on your own to make the run complete. Keep customer and real company names out of the report.
+- `result`: `pass`, `fail`, `blocked` or `skipped`. `url` is an http(s) URL or a path starting with `/`; required for `pass` and `fail`. `reason` is required for `blocked` and `skipped`.
+- `tool.capabilities`: what your browser tool could record, from `screenshots`, `trace`, `console`, `network`. Claim only what it really can.
+- `evidence` paths are relative to the report file's directory. Accepted: `.png`, `.jpg`, `.jpeg`, `.webp` screenshots and a `.zip` trace, at most 10 files of 20 MB each. `network_errors` entries may be strings or `{ "method", "url", "status" }`; query strings are dropped. `links` may point to evidence kept elsewhere, on hosts listed in `evidence.link_hosts`.
+- Everything you write is scrubbed of values that look like credentials, but do not rely on it: never put cookies, tokens, passwords or customer data into a report, a screenshot or a trace. Keep customer and real company names out of the report.
 
 ## Rules
 
-- Run the awkward path in the browser, or mark coverage incomplete and leave review closed. Do not declare a run done from tests and code reading.
-- Keep the report file and browser artifacts outside the repository. The publisher refuses a checkout with modified or untracked files and lists them.
-- After an unrelated commit, do not run everything again: use the PR comment and the earlier report to pick only what is new.
+- Run the awkward path in the browser, or report it as blocked and leave review on hold. Do not declare a run done from tests and code reading.
+- Keep the report file and evidence outside the repository. The publisher refuses a checkout with modified or untracked files and lists them.
+- After an unrelated commit, do not run everything again: `verify` lists only what is new or no longer counts.

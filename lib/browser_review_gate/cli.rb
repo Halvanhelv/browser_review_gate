@@ -27,8 +27,9 @@ module BrowserReviewGate
         stats [--days N] [--json]                 what the gate did on PRs of the last N days (default 30)
     TEXT
 
-    # `github`, `config` and `model` are replaced in tests.
-    def initialize(argv, stdin: $stdin, stdout: $stdout, stderr: $stderr, github: nil, config: nil, model: nil)
+    # `github`, `config`, `model` and `shell` are replaced in tests.
+    def initialize(argv, stdin: $stdin, stdout: $stdout, stderr: $stderr, github: nil, config: nil, model: nil, shell: nil)
+      @shell = shell
       @argv = argv.dup
       @github = github
       @config = config
@@ -120,7 +121,7 @@ module BrowserReviewGate
 
     def verify
       parsed = options(:pr, :environment, :report, :json, :no_request)
-      outcome, result = Verify.new(github: github, config: config, prompts: Prompts.new(root))
+      outcome, result = Verify.new(github: github, config: config, prompts: Prompts.new(root), shell: @shell || Shell.new)
         .run(number: parsed[:pr], environment: parsed[:environment], report: parsed[:report], request: !parsed[:no_request])
       message = Verify.describe(outcome, result)
       if parsed[:json]

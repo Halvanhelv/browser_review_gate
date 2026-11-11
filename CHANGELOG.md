@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.3.0
+
+Breaking: the report format and the settings change, and nothing from 0.2 is read. Move `url`,
+`start_command` and `sign_in` under `environments.local`, re-run `browser-review-gate install`, and
+publish a new run on PRs verified with a 0.2 report.
+
+- Reports (schema 2) name the environment, the browser tool and its capabilities, and the run's start
+  and finish times. Cases are `pass`, `fail`, `blocked` or `skipped`; the last two need a reason.
+  Validation is strict: unknown keys and malformed values make a report invalid.
+- Evidence per case: screenshots and traces are read from the report directory, confined to it,
+  checked by content, hashed and kept in the git directory; console errors and failed requests are
+  scrubbed of credential-like values and query strings; links only to hosts in `evidence.link_hosts`.
+- Named environments with health checks. `--environment` selects one. Nothing starts the app.
+- Only cases tested on a commit of the PR count; a case from elsewhere shows as stale.
+- Settings sections `verification`, `evidence`, `scenarios` and `gate`: fail a case on console or
+  network errors, require evidence (only what the tool can produce), keep earlier passing cases or
+  not, limit the scenario count, block on any failure or only on required scenarios.
+- Mandatory scenarios and a role/viewport matrix in the settings, added by the gem after the model
+  answers. A mandatory scenario scoped to paths makes a run required whatever the model decides.
+- Scenarios carry a priority, a category and why they are needed; ids are derived from behavior so
+  they stay stable across commits.
+- `verify`: one entry point that says what to run, checks the environment, requests a missing
+  assessment, and publishes or saves a finished run, with meaningful exit statuses and `--json`.
+- `doctor` (and `--json`): checks the setup end to end, with SKIP where something cannot be seen.
+- `stats` adds published and failing runs, failing scenarios, the median time to a verified run, and
+  token usage and cost as the provider reported them; `--json`.
+- PR comments show each scenario as passed, failed, blocked, skipped, missing or stale, and whether
+  human review can proceed. The report comment is a table with the evidence of every case.
+- Local commands read the settings from `origin/HEAD` when it has them, so a PR branch cannot point
+  the agent elsewhere or loosen the policy for its own run.
+- Removed: the 0.1.1 `hook --before` no-op, and the pre-scenario assessment fallback.
+
 ## 0.2.2
 
 - Requires json 2.7 or newer. Ruby 3.2 ships json 2.6, which ignores `script_safe`, so PR text in the

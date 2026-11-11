@@ -71,6 +71,8 @@ module BrowserReviewGate
     def initialize(data = {})
       data = {} unless data.is_a?(Hash)
       unknown = data.keys - DEFAULTS.keys
+      moved = unknown & %w[url start_command sign_in]
+      raise Error, "#{PATH}: #{moved.join(", ")} moved under environments.local in 0.3.0" if moved.any?
       raise Error, "#{PATH} has unknown keys: #{unknown.join(", ")}" if unknown.any?
 
       @data = DEFAULTS.merge(data.compact)

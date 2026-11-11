@@ -28,7 +28,7 @@ module BrowserReviewGate
       assert_includes workflow, 'browser-review-gate ci "$PR_NUMBER"'
       assert_includes read(".github/browser-review-gate.yml"), 'start_command: "bin/dev"'
       assert_nil Config.load(@root).environment("local")["url"]
-      assert_includes read("docs/browser-review-gate.md"), "browser-review-gate status"
+      assert_includes read("docs/browser-review-gate.md"), "browser-review-gate verify --json"
       assert_includes read(".claude/skills/browser-pr-verification/SKILL.md"), "docs/browser-review-gate.md"
       assert_includes read(".cursor/commands/browser-pr-verification.md"), "docs/browser-review-gate.md"
 

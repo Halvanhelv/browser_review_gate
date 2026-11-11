@@ -16,7 +16,10 @@ one is ignored. The built-in rules stay in force; these are added on top and win
 ## Always check
 
 <!-- Example: Run every scenario once as an administrator and once as a regular member.
-     Example: Repeat the main scenario at a phone-sized window. -->
+     Example: Repeat the main scenario at a phone-sized window.
+     These are read by the model and the agent. To make a scenario or a role/viewport combination
+     impossible to leave out, declare it under `scenarios.mandatory` and `scenarios.matrix` in
+     .github/browser-review-gate.yml: those are added by the gem and checked case by case. -->
 
 ## Scenarios by area
 

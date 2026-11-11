@@ -76,7 +76,7 @@ module BrowserReviewGate
 
     def gem_executable
       found = ENV["PATH"].to_s.split(File::PATH_SEPARATOR).any? { |dir| File.executable?(File.join(dir, "browser-review-gate")) }
-      return add("gem", "PASS", "browser_review_gate #{VERSION}, executable on PATH") if found
+      return add("gem", "PASS", "browser_review_gate #{VERSION} runs; a browser-review-gate executable is on PATH") if found
 
       add("gem", "WARN", "browser_review_gate #{VERSION} runs, but browser-review-gate is not on PATH",
         "bundle add browser_review_gate --group development, or run it with bundle exec")
