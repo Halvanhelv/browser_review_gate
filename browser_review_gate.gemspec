@@ -9,6 +9,12 @@ Gem::Specification.new do |spec|
     "until an AI coding agent (Claude Code, Cursor, Codex) has exercised the change in a browser and published " \
     "what it observed. One command sets a project up."
   spec.license = "MIT"
+  spec.homepage = "https://github.com/Halvanhelv/browser_review_gate"
+  spec.metadata = {
+    "source_code_uri" => spec.homepage,
+    "changelog_uri" => "#{spec.homepage}/blob/master/CHANGELOG.md",
+    "bug_tracker_uri" => "#{spec.homepage}/issues"
+  }
   spec.required_ruby_version = ">= 3.2"
 
   spec.files = Dir["lib/**/*", "exe/*", "README.md", "LICENSE.txt", "CHANGELOG.md"]

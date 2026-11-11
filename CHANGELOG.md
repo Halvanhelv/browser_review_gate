@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Gem metadata only: links to the source code, changelog and issues.
+
 ## 0.2.1
 
 - A reviewer who approved or asked for changes on the latest commit while their request was paused
