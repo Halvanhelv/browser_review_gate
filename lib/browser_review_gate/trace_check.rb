@@ -31,7 +31,7 @@ module BrowserReviewGate
       end
       findings << "the case's page #{url} was not requested" if @settings["check_pages"] && url && !page_requested?(requests, url)
       findings.concat(time_findings(requests, started_at, finished_at))
-      findings << "the trace has no network requests" if requests.empty?
+      findings << "the trace has no network requests; record it with snapshots on (Playwright: tracing.start({ snapshots: true }))" if requests.empty?
 
       { "status" => findings.empty? ? "verified" : "failed", "revision" => matched && tested_sha[0, 12],
         "requests" => requests.size, "findings" => findings.first(5) }.compact

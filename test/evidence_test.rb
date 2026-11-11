@@ -82,6 +82,17 @@ module BrowserReviewGate
       assert_raises(Error) { Publisher.new(github: FakeGitHub.new, report_path: report, shell: shell).save }
     end
 
+    def test_a_refused_run_keeps_no_files
+      shell = FakeShell.new
+      report = File.join(@dir, "report.json")
+      File.binwrite(File.join(@dir, "artifacts/other.png"), "#{PNG}other".b)
+      refused = browser_case("BROWSER-1", "Sign in").merge("url" => nil, "evidence" => { "screenshots" => [ "artifacts/other.png" ] })
+      File.write(report, JSON.generate(report_data("cases" => [ refused ])))
+
+      assert_raises(Error) { Publisher.new(github: FakeGitHub.new, report_path: report, shell: shell).save }
+      assert_empty Dir.glob(File.join(File.dirname(shell.saved_path), "evidence", "*"))
+    end
+
     private
 
     def prepare(evidence = nil, config: Config.new, **listed)

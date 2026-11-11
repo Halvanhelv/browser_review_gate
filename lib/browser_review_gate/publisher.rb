@@ -34,6 +34,7 @@ module BrowserReviewGate
       comments = @github.trusted_comments(number)
       ensure_browser_run_wanted!(number, comments, local_sha)
       report = merged_report(data, comments)
+      keep_evidence
 
       complete = report.passed?
       labelled = pull_request.fetch("labels").any? { |label| label["name"] == @config.label }
@@ -58,6 +59,7 @@ module BrowserReviewGate
       ensure_environment!(data)
       report = Report.new(data.merge("verified_by" => "pending"), config: @config)
       ensure_acceptable!(report)
+      keep_evidence
 
       saved_report = SavedReport.new(sha: local_sha, shell: @shell)
       saved_report.write(data)
@@ -93,17 +95,20 @@ module BrowserReviewGate
       raise Error, "No saved browser verification report for the current commit"
     end
 
-    # Evidence files are read here, next to the report, and kept in the git directory by digest.
+    # Evidence files are read here, next to the report. They are kept only once the run is accepted.
     def read_report_file
       raise Error, "A report file is required" unless @report_path
 
       data = JSON.parse(File.read(@report_path))
-      evidence = Evidence.new(base_dir: File.dirname(File.expand_path(@report_path)), config: @config)
-      processed = evidence.process(data)
-      evidence.keep(SavedReport.evidence_dir(shell: @shell))
-      processed
+      @evidence = Evidence.new(base_dir: File.dirname(File.expand_path(@report_path)), config: @config)
+      @evidence.process(data)
     rescue SystemCallError => error
       raise Error, "Cannot read report file #{@report_path}: #{error.message}"
+    end
+
+    # Files of an accepted run are kept in the git directory by digest; a refused run leaves nothing.
+    def keep_evidence
+      @evidence&.keep(SavedReport.evidence_dir(shell: @shell))
     end
 
     # A run names the environment it used; with environments configured it must be one of them.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+
+- Evidence files are kept in the git directory only once a run is accepted; a refused run leaves
+  nothing behind.
+- A trace without network requests says how to record one: with snapshots on.
+
 ## 0.4.1
 
 - The `.network` log Playwright MCP writes with `browser_start_tracing`/`browser_stop_tracing` is
