@@ -69,6 +69,8 @@ module BrowserReviewGate
     def label = config.label
     def gate_labels = [ config.label, config.waiver_label ]
     def waiver_label = config.waiver_label
+    # A local assessment calls no model, so the workflow gets no model secret (least privilege).
+    def local_assessment? = config.local?
     def playbook_path = PLAYBOOK
     def rules_path = Prompts::RULES
     def exist?(path) = File.exist?(File.join(@root, path))

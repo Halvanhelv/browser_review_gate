@@ -122,6 +122,22 @@ module BrowserReviewGate
       assert_raises(Error) { installer(agents: [ "copilot" ]).install }
     end
 
+    def test_a_local_assessment_gets_a_workflow_without_model_secrets
+      FileUtils.mkdir_p(File.join(@root, ".github"))
+      File.write(File.join(@root, Config::PATH), "assessment: local\n")
+      Installer.new(root: @root, log: StringIO.new, agents: [ "codex" ]).install
+
+      workflow = read(".github/workflows/browser-review-gate.yml")
+      refute_includes workflow, "secrets."
+      assert_includes workflow, "no secret is passed"
+    end
+
+    def test_a_ci_assessment_gets_the_model_secrets
+      Installer.new(root: @root, log: StringIO.new, agents: [ "codex" ]).install
+
+      assert_includes read(".github/workflows/browser-review-gate.yml"), "${{ secrets.ANTHROPIC_API_KEY }}"
+    end
+
     private
 
     def installer(log: StringIO.new, **options) = Installer.new(root: @root, log: log, **options)

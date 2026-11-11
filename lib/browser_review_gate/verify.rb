@@ -82,7 +82,7 @@ module BrowserReviewGate
       mode = status.dig("policy", "enforced", "trace_check")
       return [] if mode.nil? || mode == "off"
 
-      [ "Record a Playwright trace (.zip) or a HAR file (.har) for every case and list it as evidence.trace." \
+      [ "Record a Playwright trace (.zip), a Playwright MCP .network log or a HAR file (.har) for every case and list it as evidence.trace." \
         "#{mode == "require" ? " Without one, a passing case is refused. If your browser tool can save neither, stop and tell the person." : ""}" ]
     end
 

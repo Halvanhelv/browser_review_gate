@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1
+
+- With `assessment: local` the installer writes the workflow without the model secrets: that mode
+  calls no model, so the job gets none (least privilege). Re-run `browser-review-gate install` after
+  switching modes.
+- `verify` names the Playwright MCP `.network` log among the accepted traces.
+
 ## 0.5.0
 
 - `assessment: local`: CI calls no model and needs no secret. Any PR touching more than
