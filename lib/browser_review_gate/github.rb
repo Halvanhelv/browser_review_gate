@@ -92,6 +92,11 @@ module BrowserReviewGate
         input: { reviewers: reviewers, team_reviewers: team_reviewers })
     end
 
+    # Submitted reviews, oldest first.
+    def reviews(number)
+      pages("repos/#{repository}/pulls/#{number}/reviews")
+    end
+
     def request_reviewers(number, reviewers:, team_reviewers:)
       api("repos/#{repository}/pulls/#{number}/requested_reviewers", method: "POST",
         input: { reviewers: reviewers, team_reviewers: team_reviewers })

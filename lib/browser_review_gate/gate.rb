@@ -81,18 +81,37 @@ module BrowserReviewGate
       @log.puts "Took back reviewer requests until browser verification is available."
     end
 
-    # Asks the people whose requests were taken back, now that review may proceed.
+    # Asks the people whose requests were taken back, now that review may proceed. Someone who
+    # reviewed the latest commit while the request was paused is not asked again.
     def restore_requests(number, pull_request, comments)
       waiting = paused(comments)
-      reviewers = waiting["reviewers"] - [ pull_request.dig("user", "login") ]
-      return if reviewers.empty? && waiting["teams"].empty?
+      waiting["reviewers"] -= [ pull_request.dig("user", "login") ]
+      return if waiting.values.all?(&:empty?)
 
-      @github.request_reviewers(number, reviewers: reviewers, team_reviewers: waiting["teams"])
-      write_notice(number, comments, "#{author(pull_request)}Review requested again from #{names(waiting)}: browser verification no longer holds it back.",
-        "reviewers" => [], "teams" => [])
-      @log.puts "Requested review again from #{names(waiting)}."
+      reviewed = reviewed_head(number, pull_request) & waiting["reviewers"]
+      asked = { "reviewers" => waiting["reviewers"] - reviewed, "teams" => waiting["teams"] }
+      unless asked.values.all?(&:empty?)
+        @github.request_reviewers(number, reviewers: asked["reviewers"], team_reviewers: asked["teams"])
+      end
+      write_notice(number, comments, "#{author(pull_request)}#{restored_notice(asked, reviewed)}", "reviewers" => [], "teams" => [])
+      @log.puts restored_notice(asked, reviewed)
     rescue Error => error
       @log.puts "Review was not requested again: #{error.message.lines.first.to_s.strip}"
+    end
+
+    # People whose last review approved or asked for changes on the head commit.
+    def reviewed_head(number, pull_request)
+      head_sha = pull_request.fetch("head").fetch("sha")
+      last = @github.reviews(number).group_by { |review| review.dig("user", "login") }.transform_values(&:last)
+      last.select { |_login, review| review["commit_id"] == head_sha && %w[APPROVED CHANGES_REQUESTED].include?(review["state"]) }.keys
+    end
+
+    def restored_notice(asked, reviewed)
+      parts = []
+      parts << "Review requested again from #{names(asked)}: browser verification no longer holds it back." unless asked.values.all?(&:empty?)
+      parts << "#{reviewed.map { |name| Markdown.escape(name) }.join(", ")} already reviewed the latest commit, so " \
+        "#{reviewed.one? ? "was" : "were"} not asked again." if reviewed.any?
+      parts.join(" ")
     end
 
     def notice_comment(comments)

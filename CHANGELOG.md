@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- A reviewer who approved or asked for changes on the latest commit while their request was paused
+  is not asked again once the browser run is published. The notice names them instead. Someone whose
+  review is on an older commit, or who only commented, is still asked again.
+
 ## 0.2.0
 
 Re-run `browser-review-gate install` after updating: the workflow and the playbook change.

@@ -12,7 +12,7 @@ module BrowserReviewGate
 
   # A pull request held in memory. Records every write the code under test makes.
   class FakeGitHub
-    attr_reader :writes, :comments_list, :labels, :statuses, :reviewers
+    attr_reader :writes, :comments_list, :labels, :statuses, :reviewers, :reviews_list
     attr_accessor :branch_pr
 
     def initialize(head: HEAD, labels: [], comments: [], files: nil, reviewers: [], teams: [], author: "dev-user",
@@ -32,6 +32,7 @@ module BrowserReviewGate
       @login = login
       @branch_pr = 123
       @writes = []
+      @reviews_list = []
       @next_id = 100
     end
 
@@ -39,6 +40,7 @@ module BrowserReviewGate
     def login = @login
     def files(_number) = @files
     def comments(_number) = @comments_list
+    def reviews(_number) = @reviews_list
 
     def trusted_comments(_number)
       @comments_list.reject { |comment| comment["body"].to_s.match?(Report::MARKER) && !@writers.include?(comment.dig("user", "login")) }

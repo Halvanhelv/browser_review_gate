@@ -47,6 +47,40 @@ module BrowserReviewGate
       assert_equal writes_before, github.writes.size
     end
 
+    def test_does_not_ask_again_someone_who_reviewed_the_latest_commit_while_review_was_paused
+      github = FakeGitHub.new(comments: [ assessment_comment ], reviewers: [ "approver", "decliner", "stale", "commenter" ])
+        .comment_as(Assessment::AUTHOR)
+      enforce(github)
+      github.reviews_list.push(review("approver", "APPROVED"), review("decliner", "CHANGES_REQUESTED"),
+        review("stale", "APPROVED", sha: "0" * 40), review("commenter", "COMMENTED"))
+
+      github.comments_list << report_comment
+      github.labels << "browser-verified"
+      assert_equal :open, enforce(github)
+
+      assert_equal [ "stale", "commenter" ], github.reviewers
+      assert_includes github.writes.last.last, "Review requested again from stale, commenter"
+      assert_includes github.writes.last.last, "approver, decliner already reviewed the latest commit"
+    end
+
+    def test_asks_nobody_when_everyone_paused_has_reviewed_the_latest_commit
+      github = FakeGitHub.new(comments: [ assessment_comment ], reviewers: [ "approver" ]).comment_as(Assessment::AUTHOR)
+      enforce(github)
+      github.reviews_list << review("approver", "APPROVED")
+
+      github.comments_list << report_comment
+      github.labels << "browser-verified"
+      enforce(github)
+
+      assert_empty github.reviewers
+      refute(github.writes.any? { |write| write.first == :request_reviewers })
+      assert_includes github.writes.last.last, "approver already reviewed the latest commit"
+
+      writes_before = github.writes.size
+      enforce(github)
+      assert_equal writes_before, github.writes.size
+    end
+
     def test_keeps_one_notice_and_remembers_everyone_across_repeated_requests
       github = FakeGitHub.new(comments: [ assessment_comment ], reviewers: [ "first" ]).comment_as(Assessment::AUTHOR)
       enforce(github)
@@ -122,5 +156,7 @@ module BrowserReviewGate
     private
 
     def enforce(github) = Gate.new(github: github, log: StringIO.new).enforce(123)
+
+    def review(login, state, sha: HEAD) = { "user" => { "login" => login }, "state" => state, "commit_id" => sha }
   end
 end

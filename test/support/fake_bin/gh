@@ -59,6 +59,8 @@ in [ "api", "-X", "POST", path, "--input", "-" ] if path.include?("/statuses/")
   (state["statuses"] ||= []) << input.call.slice("state", "description")
   save.call
   puts "{}"
+in [ "api", "--paginate", "--slurp", path ] if path.include?("/reviews")
+  puts JSON.generate([ state["reviews"] || [] ])
 in [ "api", "--paginate", "--slurp", path ] if path.include?("/events")
   puts JSON.generate([ state["events"] || [] ])
 else
