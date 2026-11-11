@@ -20,6 +20,8 @@ Gem::Specification.new do |spec|
     "rubygems_mfa_required" => "true"
   }
   spec.required_ruby_version = ">= 3.2"
+  # script_safe, which keeps PR text from closing the prompt's tags, arrived in json 2.7.
+  spec.add_dependency "json", ">= 2.7"
 
   spec.files = Dir["lib/**/*", "exe/*", "README.md", "LICENSE.txt", "CHANGELOG.md"]
   spec.bindir = "exe"

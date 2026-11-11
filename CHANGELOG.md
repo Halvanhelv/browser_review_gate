@@ -2,7 +2,9 @@
 
 ## 0.2.2
 
-- Gem metadata only: links to the source code, changelog and issues.
+- Requires json 2.7 or newer. Ruby 3.2 ships json 2.6, which ignores `script_safe`, so PR text in the
+  assessment prompt was not escaped there.
+- Links to the source code, changelog and issues.
 
 ## 0.2.1
 
