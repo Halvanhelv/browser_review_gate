@@ -24,9 +24,11 @@ module BrowserReviewGate
       ".webp" => [ "image/webp", [ "RIFF".b ] ],
       ".zip" => [ "application/zip", [ "PK\x03\x04".b ] ],
       # A HAR network log: JSON, so it starts with "{" after optional whitespace or a byte order mark.
-      ".har" => [ "application/json", [ "{".b ] ]
+      ".har" => [ "application/json", [ "{".b ] ],
+      # The network log Playwright MCP writes next to a trace (traces/<name>.network): JSON lines.
+      ".network" => [ "application/x-ndjson", [ "{".b ] ]
     }.freeze
-    TRACE_TYPES = %w[.zip .har].freeze
+    TRACE_TYPES = %w[.zip .har .network].freeze
     SECRET = /
       (?<key>authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|access[_-]?token|refresh[_-]?token|
         id[_-]?token|token|secret|password|passwd|session(?:[_-]?id)?|csrf[_-]?token|auth)

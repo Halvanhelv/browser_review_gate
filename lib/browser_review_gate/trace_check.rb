@@ -3,8 +3,9 @@ require "time"
 require "uri"
 
 module BrowserReviewGate
-  # Reads a Playwright trace (trace.zip) or a HAR network log (.har, which Playwright, Chrome DevTools
-  # and other tools write) and checks that it shows the case really ran against the
+  # Reads a Playwright trace (trace.zip), the network log Playwright MCP saves beside its trace
+  # (.network), or a HAR network log (.har, which Playwright, Chrome DevTools and other tools write) and
+  # checks that it shows the case really ran against the
   # tested code: a response carried the app's revision header with the tested commit, the case's page
   # was requested, and the requests fall inside the run's time window.
   #
@@ -40,16 +41,14 @@ module BrowserReviewGate
 
     def read(path)
       return read_har(path) if File.extname(path).casecmp?(".har")
+      return read_lines(File.binread(path, ZipReader::MAX_ENTRY_BYTES + 1).to_s.force_encoding(Encoding::UTF_8)) if File.extname(path).casecmp?(".network")
 
       requests = []
-      ZipReader.new(path).each(->(name) { NETWORK_ENTRY.match?(name) }) do |_name, content|
-        content.each_line do |line|
-          request = parse(line)
-          requests << request if request
-        end
-      end
+      ZipReader.new(path).each(->(name) { NETWORK_ENTRY.match?(name) }) { |_name, content| requests.concat(read_lines(content)) }
       requests
     end
+
+    def read_lines(content) = content.each_line.filter_map { |line| parse(line) }
 
     def read_har(path)
       text = File.binread(path, ZipReader::MAX_ENTRY_BYTES + 1).to_s.force_encoding(Encoding::UTF_8).delete_prefix("\uFEFF")

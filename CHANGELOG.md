@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- The `.network` log Playwright MCP writes with `browser_start_tracing`/`browser_stop_tracing` is
+  accepted as a case's trace, so Playwright MCP agents need no zip step. Its tracing tools need the
+  MCP server's `--caps devtools` option.
+
 ## 0.4.0
 
 - `provenance.trace` (off by default): the gem opens each case's Playwright trace and checks that a

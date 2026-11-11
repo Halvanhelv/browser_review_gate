@@ -41,6 +41,15 @@ module BrowserReviewGate
       assert_raises(Error) { check(File.join(@dir, "artifacts/empty.har")) }
     end
 
+    def test_the_network_log_playwright_mcp_saves_is_read_directly
+      path = File.join(@dir, "artifacts", "trace-1.network")
+      File.write(path, line(request("http://localhost:3000/sign_in", HEAD)) + "not json\n" + line({ "type" => "other" }))
+
+      assert_equal "verified", check(path)["status"]
+      report = submitted({ "trace" => "artifacts/trace-1.network" }, Config.new("provenance" => { "trace" => "require" }))
+      assert_equal "passed", report.status_of("BROWSER-1")
+    end
+
     def test_a_har_file_is_accepted_as_evidence_only_when_it_is_json
       har([ request("http://localhost:3000/sign_in", HEAD)["snapshot"] ], name: "run.har")
       report = submitted({ "trace" => "artifacts/run.har" }, Config.new("provenance" => { "trace" => "require" }))
