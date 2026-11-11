@@ -128,7 +128,7 @@ module BrowserReviewGate
     # them to do something. `report` and `commits` give each scenario its status.
     def markdown(verified:, command:, author: nil, report: nil, commits: nil)
       payload = Marker.encode(JSON.generate(to_h))
-      [ "## Browser verification", "", summary(verified, command, author, report, commits), "",
+      [ Markdown::SIGNATURE, "", "## Browser verification", "", summary(verified, command, author, report, commits), "",
         "Assessed commit `#{assessed_sha}`.", "", "<!-- browser-verification-assessment:#{payload} -->" ].join("\n")
     end
 

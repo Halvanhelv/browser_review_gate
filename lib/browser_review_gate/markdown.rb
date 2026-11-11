@@ -1,5 +1,10 @@
 module BrowserReviewGate
   module Markdown
+    # The first line of every comment the gem writes, so a reader knows a tool wrote it, not a person.
+    SIGNATURE = "<sub>🤖 Written by [browser_review_gate](https://github.com/Halvanhelv/browser_review_gate)</sub>"
+
+    def self.signed(text) = "#{SIGNATURE}\n\n#{text}"
+
     # Comment text comes from a model or a report file, so it must not start markup or ping anyone.
     # "@login " for each person, so a comment that needs them reaches their notifications. Bots and
     # anything that is not a plain login get no mention.

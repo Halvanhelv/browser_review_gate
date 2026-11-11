@@ -141,6 +141,18 @@ module BrowserReviewGate
       assert(github.comments_list.any? { |comment| comment["body"].match?(Gate::WAIVED) })
     end
 
+    def test_every_comment_the_gem_writes_opens_with_its_signature
+      github = FakeGitHub.new(comments: [ assessment_comment ], reviewers: [ "reviewer" ],
+        label_actors: { "browser-verification-waived" => "lead" }).comment_as(Assessment::AUTHOR)
+      enforce(github)
+      github.labels << "browser-verification-waived"
+      enforce(github)
+      bodies = github.comments_list.map { |comment| comment["body"] } + [ report_comment["body"] ]
+
+      assert_equal 4, bodies.size
+      bodies.each { |body| assert body.start_with?(Markdown::SIGNATURE), body.lines.first }
+    end
+
     def test_says_when_a_published_run_no_longer_covers_the_latest_commits
       github = FakeGitHub.new(comments: [ assessment_comment(scenarios: [ SIGN_IN, SETTINGS ]), report_comment({ "tested_sha" => OLD }) ],
         labels: [ "browser-verified" ], reviewers: [ "reviewer" ])

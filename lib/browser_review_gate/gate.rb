@@ -63,9 +63,9 @@ module BrowserReviewGate
       comment = comments.find { |item| item.dig("user", "login") == Assessment::AUTHOR && item["body"].to_s.match?(WAIVED) }
       return comment && @github.delete_comment(comment.fetch("id")) unless waived_by
 
-      body = "Browser verification waived by #{Markdown.escape(waived_by)}: review proceeds without a browser run. " \
+      body = Markdown.signed("Browser verification waived by #{Markdown.escape(waived_by)}: review proceeds without a browser run. " \
         "Later pushes do not hold review. Remove the `#{@config.waiver_label}` label to require a run again.\n\n" \
-        "<!-- browser-review-gate:waived -->"
+        "<!-- browser-review-gate:waived -->")
       if comment.nil?
         @github.create_comment(number, body)
       elsif comment["body"] != body
@@ -143,7 +143,7 @@ module BrowserReviewGate
     end
 
     def write_notice(number, comments, text, waiting)
-      body = "#{text}\n\n<!-- browser-review-gate:paused:#{Marker.encode(JSON.generate(waiting))} -->"
+      body = Markdown.signed("#{text}\n\n<!-- browser-review-gate:paused:#{Marker.encode(JSON.generate(waiting))} -->")
       comment = notice_comment(comments)
       if comment.nil?
         @github.create_comment(number, body)

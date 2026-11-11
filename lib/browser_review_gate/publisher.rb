@@ -151,10 +151,10 @@ module BrowserReviewGate
     end
 
     def body(report, complete, commits)
-      return report.markdown(commits: commits) if complete
+      return Markdown.signed(report.markdown(commits: commits)) if complete
 
-      [ "**Not verified.** Complete every required browser scenario and pass all reported cases before human review.",
-        "", report.markdown(commits: commits) ].join("\n")
+      Markdown.signed([ "**Not verified.** Complete every required browser scenario and pass all reported cases before human review.",
+        "", report.markdown(commits: commits) ].join("\n"))
     end
 
     # Only the author's own earlier report comment can be edited in place.

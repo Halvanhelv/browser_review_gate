@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.3
+
+- Every comment the gem writes opens with one line saying `browser_review_gate` wrote it: the
+  assessment, the published report, the paused-review notice and the waiver notice. A published
+  report is posted from the developer's account, so without it the comment read as theirs.
+
 ## 0.5.2
 
 - A waiver is visible: the gate writes one PR comment saying who waived the run and that later pushes

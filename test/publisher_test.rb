@@ -10,6 +10,7 @@ module BrowserReviewGate
       assert publisher(github, report_path: report_file).publish
       assert_equal [ :create_comment, :add_label ], github.writes.map(&:first)
       assert_includes github.writes.fetch(0).last, "Verified by **AI browser agent \\(run by dev-user\\)**"
+      assert github.writes.fetch(0).last.start_with?(Markdown::SIGNATURE)
     end
 
     def test_an_incomplete_or_failing_run_is_published_but_removes_the_label
@@ -18,6 +19,8 @@ module BrowserReviewGate
       refute publisher(github, report_path: report_file("coverage_complete" => false)).publish
       assert_equal [ :remove_label, :create_comment ], github.writes.map(&:first)
       assert_includes github.writes.last.last, "Not verified"
+      assert github.writes.last.last.start_with?(Markdown::SIGNATURE)
+      assert_equal 1, github.writes.last.last.scan(Markdown::SIGNATURE).size
     end
 
     def test_new_cases_merge_with_earlier_ones_in_the_authors_own_comment

@@ -205,7 +205,7 @@ module BrowserReviewGate
 
     def report_comment(overrides = {}, id: 9, login: "dev-user")
       report = Report.new(report_data(overrides).merge("verified_by" => "dev-user"))
-      { "id" => id, "body" => report.markdown, "user" => { "login" => login } }
+      { "id" => id, "body" => Markdown.signed(report.markdown), "user" => { "login" => login } }
     end
 
     def report_file(overrides = {})
