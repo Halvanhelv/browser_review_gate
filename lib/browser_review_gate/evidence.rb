@@ -22,9 +22,11 @@ module BrowserReviewGate
       ".jpg" => [ "image/jpeg", [ "\xFF\xD8\xFF".b ] ],
       ".jpeg" => [ "image/jpeg", [ "\xFF\xD8\xFF".b ] ],
       ".webp" => [ "image/webp", [ "RIFF".b ] ],
-      ".zip" => [ "application/zip", [ "PK\x03\x04".b ] ]
+      ".zip" => [ "application/zip", [ "PK\x03\x04".b ] ],
+      # A HAR network log: JSON, so it starts with "{" after optional whitespace or a byte order mark.
+      ".har" => [ "application/json", [ "{".b ] ]
     }.freeze
-    TRACE_TYPES = %w[.zip].freeze
+    TRACE_TYPES = %w[.zip .har].freeze
     SECRET = /
       (?<key>authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|access[_-]?token|refresh[_-]?token|
         id[_-]?token|token|secret|password|passwd|session(?:[_-]?id)?|csrf[_-]?token|auth)
@@ -124,7 +126,7 @@ module BrowserReviewGate
       raise Error, "case #{position} #{kind} file #{path} is larger than #{MAX_FILE_BYTES / 1024 / 1024} MB" if bytes > MAX_FILE_BYTES
 
       media_type, signatures = TYPES.fetch(extension)
-      head = File.binread(real, 16).to_s
+      head = File.binread(real, 64).to_s.delete_prefix("\xEF\xBB\xBF".b).lstrip
       raise Error, "case #{position} #{kind} file #{path} is not a #{media_type} file" unless signatures.any? { |signature| head.start_with?(signature) }
 
       entry = { "kind" => KINDS.fetch(kind), "name" => File.basename(real)[0, 100], "media_type" => media_type,

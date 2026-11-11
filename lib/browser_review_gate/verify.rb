@@ -69,7 +69,16 @@ module BrowserReviewGate
       [ "A browser run is needed#{status["pull_request"] ? " for PR ##{status["pull_request"]}" : ""}.",
         "Environment: #{environment["name"] || "not configured"}#{environment["url"] ? " at #{environment["url"]}" : ""}.",
         "Scenarios to run in your browser tool, one case per id:", *list,
+        *trace_note(status),
         "Then: browser-review-gate verify --report PATH (publishes, or saves before the PR exists)." ].join("\n")
+    end
+
+    def self.trace_note(status)
+      mode = status.dig("policy", "enforced", "trace_check")
+      return [] if mode.nil? || mode == "off"
+
+      [ "Record a Playwright trace (.zip) or a HAR file (.har) for every case and list it as evidence.trace." \
+        "#{mode == "require" ? " Without one, a passing case is refused. If your browser tool can save neither, stop and tell the person." : ""}" ]
     end
 
     private

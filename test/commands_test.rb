@@ -168,6 +168,12 @@ module BrowserReviewGate
         .checks.find { |check| check.name == "revision header local" }.status }
 
       assert_equal "FAIL", status.call(nil)
+      recording = Doctor.new(root: root, shell: shell, github: FakeGitHub.new, probe: ->(_url) { true }, header_probe: ->(_url, _name) { nil })
+        .checks.find { |check| check.name == "trace recording" }
+      assert_equal "WARN", recording.status
+      File.write(File.join(root, ".mcp.json"), JSON.generate(mcpServers: { playwright: { command: "npx" } }))
+      assert_equal "PASS", Doctor.new(root: root, shell: shell, github: FakeGitHub.new, probe: ->(_url) { true }, header_probe: ->(_url, _name) { nil })
+        .checks.find { |check| check.name == "trace recording" }.status
       assert_equal "PASS", status.call("a" * 12)
       assert_equal "WARN", status.call("b" * 40)
     end

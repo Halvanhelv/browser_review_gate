@@ -7,6 +7,10 @@
   that requests fall within the run's time window. `warn` shows the result in the PR; `require`
   counts a passing case only with a verified trace. Traces are read in memory with only zlib, with
   caps on entries, sizes and compression ratio.
+- A HAR network log (`.har`) is accepted as a case's trace too, so the check works with any browser
+  tool that saves HAR, not only Playwright.
+- `doctor` warns when `provenance.trace` is on and no Playwright is configured in the project; `verify`
+  tells the agent a trace or HAR is needed per case.
 - `BrowserReviewGate::RevisionHeader`: Rack middleware for development that sends `X-App-Revision`
   with the checked-out commit and follows new commits without a restart.
 - `doctor` checks that the app sends the revision header and that it matches the checkout.

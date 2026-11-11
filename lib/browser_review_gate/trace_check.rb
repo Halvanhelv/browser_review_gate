@@ -3,7 +3,8 @@ require "time"
 require "uri"
 
 module BrowserReviewGate
-  # Reads a Playwright trace (trace.zip) and checks that it shows the case really ran against the
+  # Reads a Playwright trace (trace.zip) or a HAR network log (.har, which Playwright, Chrome DevTools
+  # and other tools write) and checks that it shows the case really ran against the
   # tested code: a response carried the app's revision header with the tested commit, the case's page
   # was requested, and the requests fall inside the run's time window.
   #
@@ -38,6 +39,8 @@ module BrowserReviewGate
     private
 
     def read(path)
+      return read_har(path) if File.extname(path).casecmp?(".har")
+
       requests = []
       ZipReader.new(path).each(->(name) { NETWORK_ENTRY.match?(name) }) do |_name, content|
         content.each_line do |line|
@@ -48,18 +51,33 @@ module BrowserReviewGate
       requests
     end
 
+    def read_har(path)
+      text = File.binread(path, ZipReader::MAX_ENTRY_BYTES + 1).to_s.force_encoding(Encoding::UTF_8).delete_prefix("\uFEFF")
+      log = JSON.parse(text)
+      entries = log.is_a?(Hash) ? log.dig("log", "entries") : nil
+      raise Error, "the HAR file has no log.entries" unless entries.is_a?(Array)
+
+      entries.filter_map { |entry| request(entry) }
+    rescue JSON::ParserError
+      raise Error, "the HAR file is not valid JSON"
+    end
+
     # One HAR-like resource snapshot per line; anything else is skipped.
     def parse(line)
       event = JSON.parse(line)
-      snapshot = event.is_a?(Hash) && event["type"] == "resource-snapshot" ? event["snapshot"] : nil
+      event.is_a?(Hash) && event["type"] == "resource-snapshot" ? request(event["snapshot"]) : nil
+    rescue JSON::ParserError
+      nil
+    end
+
+    # A HAR entry, which is also what a Playwright resource snapshot is.
+    def request(snapshot)
       return unless snapshot.is_a?(Hash) && snapshot["request"].is_a?(Hash)
 
       headers = snapshot.dig("response", "headers")
       header = Array(headers).find { |entry| entry.is_a?(Hash) && entry["name"].to_s.casecmp?(@settings["revision_header"]) }
       { url: snapshot["request"]["url"].to_s, time: time(snapshot["startedDateTime"]),
         revision: header && header["value"].to_s.strip.downcase[/\A\h{7,40}\z/] }
-    rescue JSON::ParserError
-      nil
     end
 
     def time(value)

@@ -39,7 +39,7 @@ module BrowserReviewGate
       repository_access if gh_ready
       environments(config) if config
       agents(config)
-      browser_tools
+      browser_tools(config)
       workflow(config) if config
       required_check(config) if config && gh_ready
       provider_secrets(config) if config && gh_ready
@@ -183,14 +183,30 @@ module BrowserReviewGate
     end
 
     # Only what the project's own files show. A tool configured elsewhere cannot be seen from here.
-    def browser_tools
+    def browser_tools(config)
       files = [ ".mcp.json", ".cursor/mcp.json", ".codex/config.toml", ".claude/settings.json", "package.json" ]
       text = files.map { |path| read(path) }.join("\n").downcase
       found = BROWSER_TOOLS.select { |key, _label| text.include?(key) }.values
-      return add("browser tool", "PASS", "configured in the project: #{found.join(", ")}") if found.any?
+      if found.any?
+        add("browser tool", "PASS", "configured in the project: #{found.join(", ")}")
+      else
+        add("browser tool", "SKIP", "none found in the project's files; one may be configured per user",
+          "Give the agent a browser tool, e.g. Playwright MCP or Chrome DevTools MCP")
+      end
+      trace_tool(config, text) if config
+    end
 
-      add("browser tool", "SKIP", "none found in the project's files; one may be configured per user",
-        "Give the agent a browser tool, e.g. Playwright MCP or Chrome DevTools MCP")
+    # With trace checks on, every case needs a Playwright trace or a HAR file. Only Playwright is known
+    # to write both; other tools may write HAR, but that cannot be told from here.
+    def trace_tool(config, text)
+      mode = config.provenance["trace"]
+      return if mode == "off"
+      return add("trace recording", "PASS", "Playwright is configured in the project; it records traces and HAR files") if text.include?("playwright")
+
+      add("trace recording", mode == "require" ? "WARN" : "SKIP",
+        "provenance.trace is #{mode}, and no Playwright is configured in the project's files. Each case needs a Playwright " \
+        "trace (.zip) or a HAR file (.har); a browser tool that cannot save either #{mode == "require" ? "gets every passing case refused" : "gets no check"}",
+        "Give the agent Playwright (e.g. Playwright MCP), or a tool that saves HAR files, or set provenance.trace to warn or off")
     end
 
     def workflow(config)

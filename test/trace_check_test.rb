@@ -28,6 +28,36 @@ module BrowserReviewGate
       assert_equal "verified", check(path)["status"]
     end
 
+    def test_a_har_network_log_is_checked_the_same_way
+      verified = har([ request("http://localhost:3000/sign_in", HEAD)["snapshot"] ], bom: true)
+      assert_equal "verified", check(verified)["status"]
+
+      stale = har([ request("http://localhost:3000/sign_in", OLD)["snapshot"] ])
+      assert_includes check(stale)["findings"].join, "not the tested commit"
+
+      File.write(File.join(@dir, "artifacts/broken.har"), "{ not json")
+      assert_raises(Error) { check(File.join(@dir, "artifacts/broken.har")) }
+      File.write(File.join(@dir, "artifacts/empty.har"), "{}")
+      assert_raises(Error) { check(File.join(@dir, "artifacts/empty.har")) }
+    end
+
+    def test_a_har_file_is_accepted_as_evidence_only_when_it_is_json
+      har([ request("http://localhost:3000/sign_in", HEAD)["snapshot"] ], name: "run.har")
+      report = submitted({ "trace" => "artifacts/run.har" }, Config.new("provenance" => { "trace" => "require" }))
+      assert_equal "passed", report.status_of("BROWSER-1")
+      assert_equal "application/json", report.cases.first.dig("evidence", "files", 0, "media_type")
+
+      File.binwrite(File.join(@dir, "artifacts/fake.har"), "PK\x03\x04zip".b)
+      assert_raises(Error) { submitted({ "trace" => "artifacts/fake.har" }, Config.new) }
+    end
+
+    def test_verify_tells_the_agent_a_trace_is_needed
+      note = Verify.trace_note("policy" => Config.new("provenance" => { "trace" => "require" }).policy)
+      assert_includes note.join, "HAR file"
+      assert_includes note.join, "refused"
+      assert_empty Verify.trace_note("policy" => Config.new.policy)
+    end
+
     def test_a_trace_that_does_not_show_the_run_fails_with_the_reason
       cases = {
         "no response carried" => [ request("http://localhost:3000/sign_in", nil) ],
@@ -129,6 +159,12 @@ module BrowserReviewGate
     end
 
     def line(event) = "#{JSON.generate(event)}\n"
+
+    def har(entries, name: "run.har", bom: false)
+      path = File.join(@dir, "artifacts", name)
+      File.write(path, "#{bom ? "\uFEFF" : ""}#{JSON.generate("log" => { "version" => "1.2", "entries" => entries })}")
+      path
+    end
 
     def trace(requests:, deflate: false, name: "trace.zip")
       zip({ "trace.trace" => line({ "type" => "context-options" }), "trace.network" => requests.map { |event| line(event) }.join }, deflate: deflate, name: name)

@@ -124,9 +124,9 @@ Off by default. A report is the agent's account; `provenance.trace` lets the gem
 
    It adds `X-App-Revision: <HEAD SHA>` to every response and follows new commits without a restart. Any other way of sending the header works too; name it in `provenance.revision_header`.
 2. Set `provenance.trace` to `warn` (results shown in the PR) or `require` (a passing case counts only with a verified trace). `doctor` checks that the app sends the header and that it matches the checkout.
-3. The agent records a Playwright trace per case and lists it as `evidence.trace`.
+3. The agent records a Playwright trace (`.zip`) or a HAR network log (`.har`) per case and lists it as `evidence.trace`. HAR is a standard format that Playwright, Chrome DevTools ("Save all as HAR") and many other tools write, so the check does not need Playwright itself. A browser tool that can save neither cannot satisfy `require`; `doctor` and `verify` warn about it before a run.
 
-When the run is published, the gem opens each trace (a zip; read in memory with size, entry and compression-ratio caps, no extra dependency) and checks its network log: a response carried the revision header with the tested commit, the case's page was requested, and the request times fall within `started_at`..`finished_at` (± `clock_skew_seconds`). The PR shows "trace verified" or what was wrong.
+When the run is published, the gem opens each trace (a zip, or HAR JSON; read in memory with size, entry and compression-ratio caps, no extra dependency) and checks its network log: a response carried the revision header with the tested commit, the case's page was requested, and the request times fall within `started_at`..`finished_at` (± `clock_skew_seconds`). The PR shows "trace verified" or what was wrong.
 
 What it catches: an agent that reports a run it did not do, ran against another commit or a stale server, or ran a different page. What it does not catch: someone who builds a trace by hand. It is a check on agents, not an attestation.
 
@@ -134,7 +134,7 @@ What it catches: an agent that reports a run it did not do, ran against another 
 
 A report is JSON in the shape the playbook describes (`schema_version: 2`): the tested commit (full SHA), the environment, the browser tool and its capabilities, start and finish times, and one case per scenario with `result` (`pass`, `fail`, `blocked`, `skipped`), the page, what was observed, and evidence.
 
-- Screenshots (`.png`, `.jpg`, `.webp`) and traces (`.zip`) are read from the report's directory. Paths that leave it, links, wrong file types (checked by content, not just name) and files over 20 MB are refused. Accepted files are hashed and kept in the git directory; the PR shows their names, sizes and SHA-256 digests, not the files.
+- Screenshots (`.png`, `.jpg`, `.webp`) and traces (`.zip` Playwright traces or `.har` network logs) are read from the report's directory. Paths that leave it, links, wrong file types (checked by content, not just name) and files over 20 MB are refused. Accepted files are hashed and kept in the git directory; the PR shows their names, sizes and SHA-256 digests, not the files.
 - Console errors and failed requests are trimmed, query strings are dropped, and values that look like credentials are masked.
 - Evidence links are accepted only on hosts listed in `evidence.link_hosts`; use them to point reviewers at screenshots you uploaded to your own artifact store.
 - A case counts when it passes, breaks no enforced policy, and was tested on a commit of the PR.
