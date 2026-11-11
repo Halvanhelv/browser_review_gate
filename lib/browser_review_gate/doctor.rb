@@ -19,7 +19,9 @@ module BrowserReviewGate
     }.freeze
 
     # `probe` takes a URL and says whether something answers there.
-    def initialize(root:, shell: Shell.new, github: nil, probe: nil, config_loader: nil)
+    # `header_probe` takes a URL and a header name and returns the header's value there, or nil.
+    def initialize(root:, shell: Shell.new, github: nil, probe: nil, config_loader: nil, header_probe: nil)
+      @header_probe = header_probe || Status.method(:header_at)
       @root = root
       @shell = shell
       @github = github
@@ -134,11 +136,29 @@ module BrowserReviewGate
         url = Status.healthcheck_url(settings.merge("name" => name))
         if @probe.call(url)
           add("environment #{name}", "PASS", "answers at #{url}")
+          revision_header(config, name, settings["url"])
         else
           add("environment #{name}", "WARN", "does not answer at #{url}",
             settings["start_command"] ? "Start it with #{settings["start_command"]} before a run" : "Make it reachable from where the agent runs")
         end
       end
+    end
+
+    # With trace checks on, a run can only count when the app names the commit it serves.
+    def revision_header(config, name, url)
+      mode = config.provenance["trace"]
+      return if mode == "off"
+
+      header = config.provenance["revision_header"]
+      served = @header_probe.call(url, header).to_s.strip.downcase
+      head = run("git", "-C", @root, "rev-parse", "HEAD").to_s.strip
+      label = "revision header #{name}"
+      fix = "Add `config.middleware.use BrowserReviewGate::RevisionHeader` to config/environments/development.rb"
+      return add(label, mode == "require" ? "FAIL" : "WARN", "#{url} sends no #{header} header; traces cannot be checked", fix) if served.empty?
+      return add(label, "PASS", "#{header} matches the checked-out commit") if !head.empty? && head.start_with?(served)
+
+      add(label, "WARN", "#{header} is #{served[0, 12]}, the checkout is at #{head[0, 12]}",
+        "Serve the checked-out code (restart the server, or run it from this worktree)")
     end
 
     def agents(config)

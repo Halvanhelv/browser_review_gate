@@ -19,7 +19,7 @@ module BrowserReviewGate
     TOP_KEYS = %w[schema_version tested_sha verified_by environment tool started_at finished_at coverage_complete
                   cases excluded runs failed_runs].freeze
     CASE_KEYS = %w[id name result url details reason evidence tested_sha verified_by environment tool].freeze
-    EVIDENCE_KEYS = %w[files console_errors network_errors links].freeze
+    EVIDENCE_KEYS = %w[files console_errors network_errors links trace_check].freeze
     FILE_KEYS = %w[kind name media_type bytes sha256].freeze
 
     attr_reader :errors
@@ -112,7 +112,7 @@ module BrowserReviewGate
         return "failed network requests were reported"
       end
 
-      missing_evidence(test_case, evidence)
+      missing_evidence(test_case, evidence) || trace_problem(evidence)
     end
 
     def failed? = cases.any? { |test_case| status_of(test_case["id"]) == "failed" }
@@ -139,7 +139,8 @@ module BrowserReviewGate
           found << "case #{position} is #{test_case["result"]} and needs a reason" unless text?(test_case["reason"], 300)
         end
         found << "case #{position} details must say what was observed" unless text?(test_case["details"], 500)
-        problem = test_case["result"] == "pass" && @config.gate["require_evidence"] ? missing_evidence(test_case, test_case["evidence"] || {}) : nil
+        evidence = test_case["evidence"].is_a?(Hash) ? test_case["evidence"] : {}
+        problem = test_case["result"] == "pass" ? (missing_evidence(test_case, evidence) || trace_problem(evidence)) : nil
         found << "case #{position} #{problem}" if problem
         found
       end
@@ -191,6 +192,17 @@ module BrowserReviewGate
         return "does not say whether there were #{key.tr("_", " ")} (evidence.#{key})" unless evidence.key?(key)
       end
       nil
+    end
+
+    # With provenance.trace require, a passing case counts only when its trace showed the run.
+    def trace_problem(evidence)
+      return unless @config.provenance["trace"] == "require"
+
+      check = evidence["trace_check"]
+      return "has no Playwright trace, which provenance.trace requires" unless check.is_a?(Hash)
+      return if check["status"] == "verified"
+
+      "trace does not show the run: #{Array(check["findings"]).first || "the check failed"}"
     end
 
     # A carried-over case keeps the tool of the run that produced it.
@@ -305,6 +317,7 @@ module BrowserReviewGate
       unless files.nil? || (files.is_a?(Array) && files.size <= Evidence::MAX_FILES && files.all? { |file| file?(file) })
         errors << "case #{position} evidence files are malformed"
       end
+      validate_trace_check(evidence["trace_check"], position) unless evidence["trace_check"].nil?
       links = Array(evidence["links"])
       errors << "case #{position} evidence links must be https URLs" unless links.all? { |link| link.to_s.match?(%r{\Ahttps://[^\s()<>]+\z}) }
       %w[console_errors network_errors links].each do |key|
@@ -313,6 +326,14 @@ module BrowserReviewGate
 
         errors << "case #{position} evidence #{key} must be a list of short strings"
       end
+    end
+
+    def validate_trace_check(check, position)
+      valid = check.is_a?(Hash) && (check.keys - %w[status revision requests findings]).empty? &&
+        %w[verified failed].include?(check["status"]) && (check["revision"].nil? || check["revision"].to_s.match?(/\A\h{7,12}\z/)) &&
+        check["requests"].is_a?(Integer) && check["findings"].is_a?(Array) && check["findings"].size <= 5 &&
+        check["findings"].all? { |finding| finding.is_a?(String) && finding.length <= 300 }
+      errors << "case #{position} evidence trace_check is malformed" unless valid
     end
 
     def file?(file)
@@ -353,6 +374,10 @@ module BrowserReviewGate
       parts << "#{evidence["console_errors"].size} console errors" if evidence["console_errors"]
       parts << "#{evidence["network_errors"].size} failed requests" if evidence["network_errors"]
       parts.concat(Array(evidence["links"]).each_with_index.map { |link, index| "[link #{index + 1}](#{link})" })
+      if (check = evidence["trace_check"])
+        parts << (check["status"] == "verified" ? "trace verified: revision `#{check["revision"]}`, #{check["requests"]} requests" :
+                                                  "trace check failed: #{Markdown.escape(check["findings"].first)}")
+      end
       parts.empty? ? "none" : parts.join("<br>")
     end
 

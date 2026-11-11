@@ -64,6 +64,17 @@ gate:
   # [enforced] Any failing case keeps review on hold, not only failing required scenarios.
   block_on_failure: true
 
+provenance:
+  # [enforced] Check each case's Playwright trace against the tested commit. off: no check. warn: the
+  # result is shown in the PR. require: a passing case counts only when its trace shows a response
+  # from the tested commit (via revision_header), a request to the case's page, and request times
+  # inside the run. The app must send the header: add BrowserReviewGate::RevisionHeader to the
+  # development middleware. With warn or require the agent is asked for a trace of every case.
+  trace: "off"
+  revision_header: "X-App-Revision"
+  check_pages: true
+  clock_skew_seconds: 300
+
 # Who assesses a PR in CI. Unset: the Claude Code CLI with a CLAUDE_CODE_OAUTH_TOKEN or
 # ANTHROPIC_API_KEY secret; with only an OPENAI_API_KEY or GEMINI_API_KEY secret, that provider's API.
 # Set `provider` to claude-cli, anthropic, openai or gemini to choose; openai and gemini need `model`.

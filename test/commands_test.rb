@@ -158,6 +158,20 @@ module BrowserReviewGate
       assert json.key?("ok")
     end
 
+    def test_doctor_checks_the_revision_header_when_traces_are_checked
+      root = Dir.mktmpdir
+      FileUtils.mkdir_p(File.join(root, ".github"))
+      File.write(File.join(root, Config::PATH), "environments:\n  local:\n    url: http://localhost:3000\nprovenance:\n  trace: require\n")
+      shell = DoctorShell.new
+      shell.define_singleton_method(:head) { "a" * 40 }
+      status = ->(served) { Doctor.new(root: root, shell: shell, github: FakeGitHub.new, probe: ->(_url) { true }, header_probe: ->(_url, _name) { served })
+        .checks.find { |check| check.name == "revision header local" }.status }
+
+      assert_equal "FAIL", status.call(nil)
+      assert_equal "PASS", status.call("a" * 12)
+      assert_equal "WARN", status.call("b" * 40)
+    end
+
     def test_doctor_fails_without_gh_and_on_broken_settings
       root = Dir.mktmpdir
       FileUtils.mkdir_p(File.join(root, ".github"))
@@ -195,6 +209,7 @@ module BrowserReviewGate
       def call(*argv, stdin_data: nil)
         case argv
         in [ "git", "rev-parse", "--show-toplevel" ] then "/repo\n"
+        in [ "git", "-C", _, "rev-parse", "HEAD" ] then respond_to?(:head) ? head : raise(Error, "no HEAD")
         in [ "gh", "--version" ] | [ "gh", "auth", "status" ] then @gh ? "ok" : raise(Error, "gh is not installed")
         in [ "gh", "api", path, "--jq", ".permissions.push" ] then @push
         in [ "gh", "api", path, "--jq", ".default_branch" ] then "main"

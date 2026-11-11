@@ -95,6 +95,12 @@ scenarios:
 gate:
   require_evidence: false            # enforced: passing cases need the evidence asked for above
   block_on_failure: true             # enforced: any failing case keeps review on hold
+
+provenance:
+  trace: "off"                       # enforced: off | warn | require (see "Checking that a run happened")
+  revision_header: "X-App-Revision"
+  check_pages: true
+  clock_skew_seconds: 300
 ```
 
 Other keys: `provider` and `model` (who assesses, see below), `workflow`, `label`, `waiver_label`, `waiver_by_author`, `status_context`, `command`, `skip_authors`, `skip_branch_prefixes`, `ignore_paths`.
@@ -104,6 +110,25 @@ Other keys: `provider` and `model` (who assesses, see below), `workflow`, `label
 **Mandatory scenarios and matrices.** A mandatory entry with `paths` makes a run required whenever the change touches those paths, whatever the model decides. Without `paths` it is added to every run that is required. `matrix: true` repeats it for every combination of the matrix, as ids such as `SIGN-IN.admin.mobile`, so the gate can tell exactly which combination is missing.
 
 **Not configurable on purpose.** Run timeouts and retries are not settings: the browser run happens in the agent, and the gem cannot enforce them. Tell the agent in `rules.md` if you have expectations.
+
+## Checking that a run happened
+
+Off by default. A report is the agent's account; `provenance.trace` lets the gem check it against a Playwright trace instead of taking it on trust.
+
+1. Make the app name the commit it serves, in development only:
+
+   ```ruby
+   # config/environments/development.rb
+   config.middleware.use BrowserReviewGate::RevisionHeader
+   ```
+
+   It adds `X-App-Revision: <HEAD SHA>` to every response and follows new commits without a restart. Any other way of sending the header works too; name it in `provenance.revision_header`.
+2. Set `provenance.trace` to `warn` (results shown in the PR) or `require` (a passing case counts only with a verified trace). `doctor` checks that the app sends the header and that it matches the checkout.
+3. The agent records a Playwright trace per case and lists it as `evidence.trace`.
+
+When the run is published, the gem opens each trace (a zip; read in memory with size, entry and compression-ratio caps, no extra dependency) and checks its network log: a response carried the revision header with the tested commit, the case's page was requested, and the request times fall within `started_at`..`finished_at` (± `clock_skew_seconds`). The PR shows "trace verified" or what was wrong.
+
+What it catches: an agent that reports a run it did not do, ran against another commit or a stale server, or ran a different page. What it does not catch: someone who builds a trace by hand. It is a check on agents, not an attestation.
 
 ## Reports
 
@@ -169,7 +194,7 @@ Set `provider` to `claude-cli`, `anthropic`, `openai` or `gemini` to choose expl
 
 Residual risks, stated plainly:
 
-- **A report is the agent's account, not an attestation.** Someone with push access, or an agent that misreports, can publish a passing report for a run that did not happen. The gem raises the cost (exact scenario ids, pages, observations, evidence digests, commit checks) but cannot prove a browser did anything. Human review remains the control.
+- **A report is the agent's account, not an attestation.** Someone with push access can publish a passing report for a run that did not happen. With `provenance.trace: require` an agent cannot do so by accident or by guessing, but a hand-built trace still passes. Human review remains the control.
 - **Evidence files stay local.** Reviewers see digests, not screenshots, unless you upload them and link them through `evidence.link_hosts`.
 - **Scrubbing is pattern-based.** It catches common credential shapes, not everything. Agents are told not to record secrets; screenshots and traces are never inspected.
 - **A taken-back review request may still notify the reviewer**, because GitHub has no way to refuse a request.

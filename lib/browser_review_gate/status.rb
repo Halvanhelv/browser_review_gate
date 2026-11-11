@@ -41,6 +41,17 @@ module BrowserReviewGate
       false
     end
 
+    # The value of `header` in the answer at `url`, or nil. Same limits as answers?.
+    def self.header_at(url, header)
+      uri = URI(url)
+      return unless %w[http https].include?(uri.scheme) && uri.host
+
+      Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", verify_mode: OpenSSL::SSL::VERIFY_NONE,
+        open_timeout: 2, read_timeout: 3) { |http| http.head(uri.request_uri)[header] }
+    rescue StandardError
+      nil
+    end
+
     # The URL a health check asks: an absolute `healthcheck`, or its path on the environment URL.
     def self.healthcheck_url(environment)
       check = environment["healthcheck"]

@@ -30,6 +30,7 @@ module BrowserReviewGate
       "evidence" => nil,
       "scenarios" => nil,
       "gate" => nil,
+      "provenance" => nil,
       "skip_authors" => [ "dependabot[bot]", "github-actions[bot]" ],
       "skip_branch_prefixes" => [],
       # A PR that only touches these paths cannot change browser behavior; no model call is made.
@@ -41,8 +42,12 @@ module BrowserReviewGate
       "evidence" => { "screenshots" => "never", "trace" => "never", "console_logs" => false, "network_logs" => false,
                       "retention_days" => 14, "link_hosts" => [] },
       "scenarios" => { "max_count" => 12, "reuse_passing" => true, "mandatory" => [], "matrix" => {} },
-      "gate" => { "require_evidence" => false, "block_on_failure" => true }
+      "gate" => { "require_evidence" => false, "block_on_failure" => true },
+      # Checks a case's Playwright trace against the tested commit: off, warn (shown in the PR) or
+      # require (a passing case counts only with a verified trace).
+      "provenance" => { "trace" => "off", "revision_header" => "X-App-Revision", "check_pages" => true, "clock_skew_seconds" => 300 }
     }.freeze
+    TRACE_MODES = %w[off warn require].freeze
 
     ENVIRONMENT_KEYS = %w[url healthcheck start_command sign_in].freeze
     MANDATORY_KEYS = %w[id name why paths matrix].freeze
@@ -81,7 +86,7 @@ module BrowserReviewGate
       validate
     end
 
-    (DEFAULTS.keys - %w[environments verification evidence scenarios gate]).each do |key|
+    (DEFAULTS.keys - %w[environments verification evidence scenarios gate provenance]).each do |key|
       define_method(key) { @data[key] }
     end
 
@@ -91,6 +96,7 @@ module BrowserReviewGate
     def evidence = @sections["evidence"]
     def scenarios = @sections["scenarios"]
     def gate = @sections["gate"]
+    def provenance = @sections["provenance"]
 
     # The environment a run uses: the one named, the configured default, or the only one there is.
     def environment(name = nil)
@@ -132,10 +138,12 @@ module BrowserReviewGate
           "require_evidence" => gate["require_evidence"],
           "block_on_failure" => gate["block_on_failure"],
           "reuse_passing" => scenarios["reuse_passing"],
-          "max_scenarios" => scenarios["max_count"]
+          "max_scenarios" => scenarios["max_count"],
+          "trace_check" => provenance["trace"]
         },
         "agent" => {
-          "screenshots" => evidence["screenshots"], "trace" => evidence["trace"],
+          "screenshots" => evidence["screenshots"],
+          "trace" => provenance["trace"] == "off" ? evidence["trace"] : "always",
           "console_logs" => evidence["console_logs"], "network_logs" => evidence["network_logs"]
         }
       }
@@ -182,6 +190,7 @@ module BrowserReviewGate
       environment # the configured default must exist
       validate_flags
       validate_evidence
+      validate_provenance
       validate_scenarios
     end
 
@@ -207,6 +216,15 @@ module BrowserReviewGate
       return if hosts.is_a?(Array) && hosts.all? { |host| host.is_a?(String) && host.match?(/\A[a-z0-9.-]+\z/) }
 
       raise Error, "#{PATH}: evidence.link_hosts must be a list of host names"
+    end
+
+    def validate_provenance
+      raise Error, "#{PATH}: provenance.trace must be one of #{TRACE_MODES.join(", ")}" unless TRACE_MODES.include?(provenance["trace"])
+      raise Error, "#{PATH}: provenance.revision_header must be an HTTP header name" unless provenance["revision_header"].to_s.match?(/\A[A-Za-z0-9-]{1,64}\z/)
+      raise Error, "#{PATH}: provenance.check_pages must be true or false" unless [ true, false ].include?(provenance["check_pages"])
+
+      skew = provenance["clock_skew_seconds"]
+      raise Error, "#{PATH}: provenance.clock_skew_seconds must be a whole number from 0 to 3600" unless skew.is_a?(Integer) && skew.between?(0, 3600)
     end
 
     def validate_scenarios

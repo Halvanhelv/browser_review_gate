@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0
+
+- `provenance.trace` (off by default): the gem opens each case's Playwright trace and checks that a
+  response carried the tested commit in `revision_header`, that the case's page was requested, and
+  that requests fall within the run's time window. `warn` shows the result in the PR; `require`
+  counts a passing case only with a verified trace. Traces are read in memory with only zlib, with
+  caps on entries, sizes and compression ratio.
+- `BrowserReviewGate::RevisionHeader`: Rack middleware for development that sends `X-App-Revision`
+  with the checked-out commit and follows new commits without a restart.
+- `doctor` checks that the app sends the revision header and that it matches the checkout.
+- The installer's next steps name the 0.3 settings.
+
 ## 0.3.0
 
 Breaking: the report format and the settings change, and nothing from 0.2 is read. Move `url`,

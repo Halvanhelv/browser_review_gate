@@ -67,6 +67,7 @@ module BrowserReviewGate
     def process(data)
       return data unless data.is_a?(Hash) && data["cases"].is_a?(Array)
 
+      @run = data
       data.merge("cases" => data["cases"].each_with_index.map { |test_case, index| process_case(test_case, index + 1) })
     end
 
@@ -96,6 +97,8 @@ module BrowserReviewGate
       raise Error, "case #{position} evidence lists more than #{MAX_FILES} files" if listed.size > MAX_FILES
 
       published["files"] = listed.map { |kind, path| file(kind, path, position) } if listed.any?
+      trace = @files.reverse.find { |file| file["kind"] == "trace" && published.fetch("files", []).any? { |entry| entry["sha256"] == file["sha256"] } }
+      published["trace_check"] = check_trace(trace["source"], test_case) if trace && @config.provenance["trace"] != "off"
       published["console_errors"] = entries(evidence["console_errors"], position, "console_errors") { |entry| Evidence.scrub(entry) } if evidence.key?("console_errors")
       published["network_errors"] = entries(evidence["network_errors"], position, "network_errors") { |entry| network(entry) } if evidence.key?("network_errors")
       published["links"] = links(evidence["links"], position) if evidence.key?("links")
@@ -128,6 +131,14 @@ module BrowserReviewGate
                 "bytes" => bytes, "sha256" => Digest::SHA256.file(real).hexdigest }
       @files << entry.merge("source" => real)
       entry
+    end
+
+    # A trace that cannot be read is a failed check, not an error: the PR shows why.
+    def check_trace(path, test_case)
+      TraceCheck.new(@config).call(path, tested_sha: @run["tested_sha"].to_s, url: test_case["url"],
+        started_at: @run["started_at"], finished_at: @run["finished_at"])
+    rescue Error => error
+      { "status" => "failed", "requests" => 0, "findings" => [ error.message[0, 300] ] }
     end
 
     def relative?(path)

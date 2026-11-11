@@ -193,9 +193,10 @@ module BrowserReviewGate
       <<~TEXT
         Next:
           1. Add one secret to the repository: CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY.
-          2. Fill start_command, url and sign_in in #{Config::PATH}.
+          2. Describe your environments (url, healthcheck, start_command, sign_in) in #{Config::PATH}.
           3. Describe what this application always checks in #{Prompts::RULES}.
           4. Commit and merge to the default branch: the workflow runs from there.
+          5. Run browser-review-gate doctor to check the setup.
       TEXT
     end
   end
