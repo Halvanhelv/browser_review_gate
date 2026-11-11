@@ -126,6 +126,21 @@ module BrowserReviewGate
       refute(github.comments_list.any? { |comment| comment["body"].match?(Gate::WAIVED) })
     end
 
+    def test_a_waiver_asks_again_the_people_whose_requests_were_taken_back
+      github = FakeGitHub.new(comments: [ assessment_comment ], reviewers: [ "reviewer" ], teams: [ "backend" ],
+        label_actors: { "browser-verification-waived" => "lead" }).comment_as(Assessment::AUTHOR)
+      assert_equal :closed, enforce(github)
+      assert_empty github.reviewers
+
+      github.labels << "browser-verification-waived"
+      assert_equal :open, enforce(github)
+
+      assert_equal [ "reviewer" ], github.reviewers
+      assert_includes github.writes, [ :request_reviewers, [ "reviewer" ], [ "backend" ] ]
+      assert(github.comments_list.any? { |comment| comment["body"].include?("Review requested again from reviewer, backend") })
+      assert(github.comments_list.any? { |comment| comment["body"].match?(Gate::WAIVED) })
+    end
+
     def test_says_when_a_published_run_no_longer_covers_the_latest_commits
       github = FakeGitHub.new(comments: [ assessment_comment(scenarios: [ SIGN_IN, SETTINGS ]), report_comment({ "tested_sha" => OLD }) ],
         labels: [ "browser-verified" ], reviewers: [ "reviewer" ])
