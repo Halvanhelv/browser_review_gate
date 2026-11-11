@@ -27,6 +27,7 @@ module BrowserReviewGate
       saved_report = SavedReport.new(sha: local_sha, shell: @shell)
       data = load_report(saved_report)
       ensure_report_sha!(data, local_sha)
+      ensure_environment!(data)
       actor = @github.login
       data["verified_by"] = "AI browser agent (run by #{actor})"
 
@@ -37,9 +38,10 @@ module BrowserReviewGate
       complete = report.passed?
       labelled = pull_request.fetch("labels").any? { |label| label["name"] == @config.label }
       @github.remove_label(number, @config.label) if labelled && !complete
-      write_comment(number, comments, actor, body(report, complete))
+      write_comment(number, comments, actor, body(report, complete, @github.pull_request_commits(number)))
       @github.add_label(number, @config.label) if complete
       saved_report.delete unless @report_path
+      SavedReport.prune(shell: @shell, days: @config.evidence["retention_days"])
       complete
     rescue KeyError => error
       raise Error, "Browser verification data is incomplete: #{error.message}"
@@ -53,11 +55,13 @@ module BrowserReviewGate
       ensure_clean_worktree!
       data = read_report_file
       ensure_report_sha!(data, local_sha)
-      report = Report.new(data.merge("verified_by" => "pending"))
+      ensure_environment!(data)
+      report = Report.new(data.merge("verified_by" => "pending"), config: @config)
       ensure_acceptable!(report)
 
       saved_report = SavedReport.new(sha: local_sha, shell: @shell)
       saved_report.write(data)
+      SavedReport.prune(shell: @shell, days: @config.evidence["retention_days"])
       saved_report.path
     rescue JSON::ParserError => error
       raise Error, "Browser verification data is not valid JSON: #{error.message}"
@@ -89,12 +93,26 @@ module BrowserReviewGate
       raise Error, "No saved browser verification report for the current commit"
     end
 
+    # Evidence files are read here, next to the report, and kept in the git directory by digest.
     def read_report_file
       raise Error, "A report file is required" unless @report_path
 
-      JSON.parse(File.read(@report_path))
+      data = JSON.parse(File.read(@report_path))
+      evidence = Evidence.new(base_dir: File.dirname(File.expand_path(@report_path)), config: @config)
+      processed = evidence.process(data)
+      evidence.keep(SavedReport.evidence_dir(shell: @shell))
+      processed
     rescue SystemCallError => error
       raise Error, "Cannot read report file #{@report_path}: #{error.message}"
+    end
+
+    # A run names the environment it used; with environments configured it must be one of them.
+    def ensure_environment!(data)
+      name = data["environment"]
+      return if @config.environments.empty? ? Config::NAME_PATTERN.match?(name.to_s) : @config.environments.key?(name)
+
+      known = @config.environments.keys
+      raise Error, "Report environment must be #{known.empty? ? "a short lowercase name" : "one of #{known.join(", ")}"}, not #{name.inspect}"
     end
 
     # A report made before the PR existed may arrive before the gate has assessed the commit.
@@ -106,11 +124,16 @@ module BrowserReviewGate
     end
 
     def merged_report(data, comments)
-      submitted = Report.new(data)
+      submitted = Report.new(data, config: @config)
       ensure_acceptable!(submitted)
 
       prior = Report.latest_comment(comments)
-      report = Report.merge(prior ? Report.data_from(prior["body"]) : {}, submitted.to_h)
+      prior_data = begin
+        prior ? Report.data_from(prior["body"]) : {}
+      rescue Error
+        {}
+      end
+      report = Report.merge(prior_data, submitted.to_h, config: @config)
       raise Error, report.errors.join("; ") unless report.valid?
 
       report
@@ -118,15 +141,15 @@ module BrowserReviewGate
 
     # A run is taken only with the evidence of each case: the page and what was observed there.
     def ensure_acceptable!(report)
-      problems = report.valid? ? report.evidence_errors : report.errors
+      problems = report.valid? ? report.submission_errors : report.errors
       raise Error, problems.join("; ") if problems.any?
     end
 
-    def body(report, complete)
-      return report.markdown if complete
+    def body(report, complete, commits)
+      return report.markdown(commits: commits) if complete
 
       [ "**Not verified.** Complete every required browser scenario and pass all reported cases before human review.",
-        "", report.markdown ].join("\n")
+        "", report.markdown(commits: commits) ].join("\n")
     end
 
     # Only the author's own earlier report comment can be edited in place.

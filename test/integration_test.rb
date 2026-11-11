@@ -40,7 +40,7 @@ module BrowserReviewGate
 
       # A new commit changes another view: the label and the reviewer request go.
       commit("app/views/settings.erb" => "<h1>Settings</h1>\n")
-      update_state("head" => head, "files" => [ file("app/views/home.erb"), file("app/views/settings.erb") ])
+      update_state("head" => head, "commits" => git("rev-list", "--reverse", "HEAD").split, "files" => [ file("app/views/home.erb"), file("app/views/settings.erb") ])
       run!("ci", "7", login: "github-actions[bot]")
       assert_empty state.fetch("labels")
       assert_empty state.fetch("reviewers")
@@ -136,7 +136,8 @@ module BrowserReviewGate
 
     def report(case_id, coverage_complete: true)
       path = File.join(@tmp, "#{case_id}.json")
-      File.write(path, JSON.generate(tested_sha: head, coverage_complete: coverage_complete,
+      File.write(path, JSON.generate(schema_version: 2, tested_sha: head, environment: "local", tool: TestData::TOOL,
+        started_at: "2026-11-11T10:00:00Z", finished_at: "2026-11-11T10:03:00Z", coverage_complete: coverage_complete,
         cases: [ { id: case_id, name: "Scenario #{case_id}", result: "pass", url: "/", details: "The page showed the change." } ]))
       path
     end

@@ -3,26 +3,51 @@ require "openssl"
 require "uri"
 
 module BrowserReviewGate
-  # What an agent needs to know before a browser run: the decision for the PR head and the next step.
+  # What an agent needs to know before a browser run: the decision for the PR head, the scenarios still
+  # owed with their status, the environment to use, the policy, and the next step.
   class Status
     RUN_STEPS = %w[run_and_publish run_and_save].freeze
 
-    # `probe` takes the app URL and says whether something answers there.
+    # `probe` takes a URL and says whether something answers there.
     def initialize(github:, config: Config.new, shell: Shell.new, probe: nil, prompts: Prompts.new)
       @prompts = prompts
       @github = github
       @config = config
       @shell = shell
-      @probe = probe || method(:answers?)
+      @probe = probe || Status.method(:answers?)
     end
 
-    def to_h(number = nil)
+    def to_h(number = nil, environment: nil)
       result = facts(number)
       result["project_rules"] = Prompts::RULES if @prompts.rules
-      result["app"] = app
+      result["environment"] = environment_details(environment)
+      result["policy"] = @config.policy
+      result["report"] = report_instructions
       # The agent never starts the app itself: a person decides what runs on their machine.
-      result["next"] = "ask_to_start_app" if RUN_STEPS.include?(result["next"]) && result["app"]["running"] == false
+      result["next"] = "ask_to_start_app" if RUN_STEPS.include?(result["next"]) && result["environment"]["reachable"] == false
       result
+    end
+
+    # Any HTTP answer counts, redirects are not followed, and only http(s) is tried. A local
+    # certificate is not checked. The URL comes from the project settings.
+    def self.answers?(url)
+      uri = URI(url)
+      return false unless %w[http https].include?(uri.scheme) && uri.host
+
+      Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", verify_mode: OpenSSL::SSL::VERIFY_NONE,
+        open_timeout: 2, read_timeout: 3) { |http| http.head(uri.request_uri) }
+      true
+    rescue StandardError
+      false
+    end
+
+    # The URL a health check asks: an absolute `healthcheck`, or its path on the environment URL.
+    def self.healthcheck_url(environment)
+      check = environment["healthcheck"]
+      return environment["url"] if check.nil?
+      return check if check.start_with?("http://", "https://")
+
+      URI.join(environment["url"], check).to_s
     end
 
     private
@@ -31,7 +56,7 @@ module BrowserReviewGate
       local_sha = @shell.call("git", "rev-parse", "HEAD").strip
       saved = SavedReport.new(sha: local_sha, shell: @shell).exist?
       number ||= @github.pull_request_number_for_branch
-      return { "pull_request" => nil, "local_head" => local_sha, "saved_run" => saved, "next" => saved ? "open_pull_request" : "run_and_save" } unless number
+      return { "pull_request" => nil, "local_head" => local_sha, "saved_run" => saved, "scenarios" => [], "next" => saved ? "open_pull_request" : "run_and_save" } unless number
 
       pull_request = @github.pull_request(number)
       comments = @github.trusted_comments(number)
@@ -39,15 +64,23 @@ module BrowserReviewGate
       assessment = Assessment.latest(comments)
       assessment = nil unless assessment&.for?(head_sha)
       labels = pull_request.fetch("labels").map { |label| label["name"] }
-      report = Report.latest(comments)
-      verified = labels.include?(@config.label) && (assessment ? assessment.covered_by?(report) : report&.passed? == true)
+      report = Report.latest(comments, config: @config)
+      commits = @github.pull_request_commits(number)
+      reuse = @config.scenarios["reuse_passing"]
+      verified = labels.include?(@config.label) && assessment&.covered_by?(report, commits: commits, reuse_passing: reuse) == true
       waived = labels.include?(@config.waiver_label)
 
       { "pull_request" => number, "pr_head" => head_sha, "local_head" => local_sha,
         "decision" => assessment&.decision, "reason" => assessment&.reason,
         # What the run must exercise; each id is the `id` of the case that reports it.
-        "scenarios" => assessment ? assessment.outstanding(report) : [], "verified" => verified, "waived" => waived,
+        "scenarios" => assessment ? scenarios(assessment, report, commits, reuse) : [], "verified" => verified, "waived" => waived,
         "saved_run" => saved, "next" => next_step(assessment, verified || waived, saved, head_sha == local_sha) }
+    end
+
+    def scenarios(assessment, report, commits, reuse)
+      assessment.outstanding(report, commits: commits, reuse_passing: reuse).map do |scenario|
+        scenario.merge("status" => report ? report.status_of(scenario["id"], commits: commits) : "missing")
+      end
     end
 
     def next_step(assessment, cleared, saved, on_pr_head)
@@ -59,20 +92,18 @@ module BrowserReviewGate
       "run_and_publish"
     end
 
-    def app
-      details = @config.app
-      details["running"] = @probe.call(@config.url) if @config.url
+    def environment_details(name)
+      environment = @config.environment(name)
+      return { "name" => nil, "reachable" => nil, "note" => "No environment is configured in #{Config::PATH}." } unless environment
+
+      details = environment.slice("name", "url", "healthcheck", "start_command", "sign_in")
+      details["reachable"] = environment["url"] ? @probe.call(Status.healthcheck_url(environment)) : nil
       details
     end
 
-    # Any HTTP answer counts; a local certificate is not checked.
-    def answers?(url)
-      uri = URI(url)
-      Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", verify_mode: OpenSSL::SSL::VERIFY_NONE,
-        open_timeout: 2, read_timeout: 3) { |http| http.head(uri.path.empty? ? "/" : uri.path) }
-      true
-    rescue StandardError
-      false
+    def report_instructions
+      { "schema_version" => Report::SCHEMA_VERSION, "results" => Report::RESULTS, "capabilities" => Report::CAPABILITIES,
+        "evidence_paths" => "relative to the directory of the report file, outside the repository" }
     end
   end
 end

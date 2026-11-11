@@ -30,10 +30,10 @@ module BrowserReviewGate
       text(RULES)
     end
 
-    def assessment
+    def assessment(max_count: 12)
       parts = [ FRAME_HEAD, "## Decision\n\n#{policy}" ]
       parts << "## Project rules\n\n#{PROJECT_RULES_NOTE}\n\n#{rules}" if rules
-      parts << FRAME_TAIL
+      parts << format(FRAME_TAIL, max_count: max_count)
       parts.join("\n\n")
     end
 
@@ -58,9 +58,14 @@ module BrowserReviewGate
 
       When the decision is `required`, `scenarios` lists what a person must do in the browser to exercise
       every behavior this pull request changes, including what the project rules require for the areas
-      it touches. One entry per scenario, at most 12, the fewest that cover the change. `name` says what
-      to do and what must be seen, in one sentence. `id` is a short label such as `SIGN-IN-1`: letters,
-      digits and hyphens.
+      it touches. One entry per scenario, at most %<max_count>d, the fewest that cover the change. `name` says
+      what to do and what must be seen, in one sentence. `id` is a short label such as `SIGN-IN-1`:
+      letters, digits and hyphens. Derive the id from the behavior, not from its position, so the same
+      behavior gets the same id when the pull request changes. `priority` is `critical` when a failure
+      would block people from a core task or expose data, otherwise `normal`. `category` is one short
+      lowercase word for the area, such as `forms`, `navigation` or `permissions`. `why` is one sentence
+      saying which change makes this scenario necessary. Scenarios the project settings make mandatory
+      are added after you answer; do not list them.
 
       When `report_cases` is present, those are the cases of an earlier browser run. If one of them
       already exercises a scenario, give that scenario the `id` of that case, exactly. Give every other

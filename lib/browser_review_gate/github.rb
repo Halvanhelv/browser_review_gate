@@ -51,6 +51,13 @@ module BrowserReviewGate
       raise Error, "gh returned output that is not a pull request list"
     end
 
+    # Full SHAs of the PR's commits, oldest first. GitHub lists at most 250.
+    def pull_request_commits(number)
+      pages("repos/#{repository}/pulls/#{number}/commits").map { |commit| commit.fetch("sha") }
+    rescue KeyError
+      raise Error, "gh returned commits without a sha for PR #{number}"
+    end
+
     def files(number)
       pages("repos/#{repository}/pulls/#{number}/files")
     end

@@ -26,7 +26,7 @@ module BrowserReviewGate
       assert publisher(github, report_path: report_file("cases" => [ browser_case("BROWSER-2", "Save") ])).publish
       kind, id, body = github.writes.fetch(0)
       assert_equal [ :update_comment, 9 ], [ kind, id ]
-      assert_includes body, "Save at /sign\\_in"
+      assert_includes body, "| `BROWSER-2` Save | PASSED | /sign\\_in | `aaaaaaa` | none |"
       cases = Report.data_from(body).fetch("cases")
       assert_equal %w[BROWSER-1 BROWSER-2], cases.map { |test_case| test_case["id"] }
       assert_equal OLD, cases.fetch(0).fetch("tested_sha")

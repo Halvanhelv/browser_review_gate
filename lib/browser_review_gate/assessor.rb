@@ -16,8 +16,12 @@ module BrowserReviewGate
           type: "array",
           items: {
             type: "object",
-            properties: { id: { type: "string" }, name: { type: "string" } },
-            required: %w[id name],
+            properties: {
+              id: { type: "string" }, name: { type: "string" },
+              priority: { type: "string", enum: Assessment::PRIORITIES },
+              category: { type: "string" }, why: { type: "string" }
+            },
+            required: %w[id name priority category why],
             additionalProperties: false
           }
         }
@@ -27,6 +31,7 @@ module BrowserReviewGate
     }.freeze
 
     IGNORED_REASON = "Only files that cannot change browser behavior were touched."
+    MANDATORY_REASON = "The project settings require browser scenarios for the files this change touches."
 
     def initialize(github:, model:, config: Config.new, prompts: Prompts.new, log: $stdout)
       @github = github
@@ -40,12 +45,13 @@ module BrowserReviewGate
     # when a report it has not judged lacks some of its scenarios; the comment is refreshed either way.
     def assess(number, pull_request: @github.pull_request(number), comments: @github.trusted_comments(number))
       head_sha = pull_request.fetch("head").fetch("sha")
-      report = Report.latest(comments)
+      report = Report.latest(comments, config: @config)
+      commits = @github.pull_request_commits(number)
 
       existing = Assessment.latest(comments)
       assessed_before = existing&.for?(head_sha)
       assessment = assessed_before && existing.settles?(report) ? existing : propose(number, pull_request, head_sha, report)
-      publish(number, assessment, pull_request, comments, report, new_commit: !assessed_before)
+      publish(number, assessment, pull_request, comments, report, commits, new_commit: !assessed_before)
       assessment
     rescue KeyError => error
       raise Error, "Browser assessment data is incomplete: #{error.message}"
@@ -53,27 +59,49 @@ module BrowserReviewGate
 
     private
 
+    # Mandatory scenarios scoped to paths make a run required whatever the model says; the rest are
+    # added whenever a run is required.
     def propose(number, pull_request, head_sha, report)
       files = @github.files(number)
-      return Assessment.not_required(IGNORED_REASON, assessed_sha: head_sha) if files.all? { |file| @config.ignored?(file["filename"]) }
+      paths = files.map { |file| file["filename"] }
+      mandatory = @config.mandatory_scenarios(paths)
+      forced = mandatory.any? { |scenario| scoped?(scenario) }
+      return Assessment.not_required(IGNORED_REASON, assessed_sha: head_sha) if !forced && paths.all? { |path| @config.ignored?(path) }
 
-      text = @model.complete(system: @prompts.assessment, user: user_message(pull_request, files, report), schema: SCHEMA)
-      assessment = Assessment.parse(text, assessed_sha: head_sha, report_seen: report&.fingerprint)
+      text = @model.complete(system: @prompts.assessment(max_count: @config.scenarios["max_count"]), user: user_message(pull_request, files, report), schema: SCHEMA)
+      text = force_required(text) if forced
+      usage = @model.respond_to?(:last_usage) ? @model.last_usage : nil
+      assessment = Assessment.parse(text, assessed_sha: head_sha, report_seen: report&.fingerprint, mandatory: mandatory,
+        max_count: @config.scenarios["max_count"], usage: usage)
       raise Error, "Model returned an invalid browser assessment: #{assessment.errors.join("; ")}" unless assessment.valid?
 
       assessment
     end
 
+    def scoped?(scenario)
+      entry = @config.scenarios["mandatory"].find { |item| scenario["id"] == item["id"] || scenario["id"].start_with?("#{item["id"]}.") }
+      entry && entry["paths"]
+    end
+
+    def force_required(text)
+      data = JSON.parse(text.to_s)
+      return text unless data.is_a?(Hash) && data["decision"] == "not-required"
+
+      JSON.generate(data.merge("decision" => "required", "reason" => MANDATORY_REASON, "scenarios" => []))
+    rescue JSON::ParserError
+      text
+    end
+
     # Ordinary commits keep the label; it goes only when the report does not cover the commit.
-    def publish(number, assessment, pull_request, comments, report, new_commit:)
+    def publish(number, assessment, pull_request, comments, report, commits, new_commit:)
       labelled = pull_request.fetch("labels").any? { |label| label["name"] == @config.label }
-      covered = assessment.covered_by?(report)
+      covered = assessment.covered_by?(report, commits: commits, reuse_passing: @config.scenarios["reuse_passing"])
       run_owed = assessment.required? && !(labelled && covered)
       @github.remove_label(number, @config.label) if run_owed && labelled
 
       comment = Assessment.latest_comment(comments)
       body = assessment.markdown(verified: labelled && covered, command: "#{@config.command} #{number}",
-        author: run_owed ? people_to_tell(pull_request, assessment.assessed_sha) : nil, report: report)
+        author: run_owed ? people_to_tell(pull_request, assessment.assessed_sha) : nil, report: report, commits: commits)
       if comment.nil?
         @github.create_comment(number, body)
       elsif comment["body"] == body

@@ -16,7 +16,8 @@ module BrowserReviewGate
     attr_accessor :branch_pr
 
     def initialize(head: HEAD, labels: [], comments: [], files: nil, reviewers: [], teams: [], author: "dev-user",
-      branch: "feature/thing", login: "dev-user", label_actors: {}, commit_author: nil, writers: [ "dev-user" ])
+      branch: "feature/thing", login: "dev-user", label_actors: {}, commit_author: nil, writers: [ "dev-user" ], commits: [ OLD, HEAD ])
+      @commits = commits
       @writers = writers
       @label_actors = label_actors
       @commit_author = commit_author
@@ -41,6 +42,7 @@ module BrowserReviewGate
     def files(_number) = @files
     def comments(_number) = @comments_list
     def reviews(_number) = @reviews_list
+    def pull_request_commits(_number) = @commits
 
     def trusted_comments(_number)
       @comments_list.reject { |comment| comment["body"].to_s.match?(Report::MARKER) && !@writers.include?(comment.dig("user", "login")) }
@@ -134,6 +136,8 @@ module BrowserReviewGate
       when [ "git", "rev-parse", "HEAD" ] then @head
       when [ "git", "status", "--porcelain" ] then @status
       when [ "git", "rev-parse", "--git-path", "browser-verification/#{@head}.json" ] then @saved_path
+      when [ "git", "rev-parse", "--git-path", "browser-verification" ] then File.dirname(@saved_path)
+      when [ "git", "rev-parse", "--git-path", "browser-verification/evidence" ] then File.join(File.dirname(@saved_path), "evidence")
       when [ "git", "diff", "--name-only", "origin/HEAD...HEAD" ] then raise Error, "unknown revision"
       when [ "git", "diff", "--name-only", "origin/main...HEAD" ] then @changed.join("\n")
       else raise "Unexpected command: #{argv.inspect}"
@@ -158,8 +162,11 @@ module BrowserReviewGate
       { "id" => id, "body" => body, "user" => { "login" => login } }
     end
 
+    TOOL = { "name" => "Playwright MCP", "version" => "0.0.40", "capabilities" => %w[screenshots console network] }.freeze
+
     def report_data(overrides = {})
-      { "tested_sha" => HEAD, "coverage_complete" => true,
+      { "schema_version" => 2, "tested_sha" => HEAD, "environment" => "local", "tool" => TOOL,
+        "started_at" => "2026-11-11T10:00:00Z", "finished_at" => "2026-11-11T10:04:00Z", "coverage_complete" => true,
         "cases" => [ browser_case("BROWSER-1", "Sign in") ] }.merge(overrides)
     end
 

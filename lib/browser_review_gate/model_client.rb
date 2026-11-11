@@ -32,6 +32,9 @@ module BrowserReviewGate
       @runner = runner || method(:run)
     end
 
+    # Token counts and cost of the last call as the CLI reported them, or nil.
+    attr_reader :last_usage
+
     # Returns the model's answer as JSON text. Raises Error when the call fails or gives no answer.
     def complete(system:, user:, schema:)
       argv = @command + [ "--print", "--tools", "", "--setting-sources", "", "--system-prompt", system,
@@ -39,6 +42,7 @@ module BrowserReviewGate
       argv += [ "--model", @model ] if @model
       stdout, stderr, success = @runner.call(environment, argv, user)
       result = parse(stdout)
+      @last_usage = usage(result)
       answer = result["structured_output"] if success && result["is_error"] == false
       return JSON.generate(answer) if answer.is_a?(Hash)
 
@@ -46,6 +50,12 @@ module BrowserReviewGate
     end
 
     private
+
+    def usage(result)
+      tokens = result["usage"].is_a?(Hash) ? result["usage"] : {}
+      { "provider" => "claude-cli", "model" => @model, "input_tokens" => tokens["input_tokens"],
+        "output_tokens" => tokens["output_tokens"], "cost_usd" => result["total_cost_usd"] }.compact.then { |found| found.size > 1 ? found : nil }
+    end
 
     def parse(stdout)
       result = JSON.parse(stdout.to_s)

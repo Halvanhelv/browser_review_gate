@@ -14,7 +14,7 @@ module BrowserReviewGate
       kind, body = github.writes.fetch(0)
       assert_equal :create_comment, kind
       assert_includes body, "```\n/browser-pr-verification 123\n```"
-      assert_includes body, "@dev-user Browser testing is needed"
+      assert_includes body, "@dev-user **Human review is on hold.** Browser testing is needed"
       assert_includes model.requests.fetch(0)[:user], "show.html.erb"
     end
 
@@ -57,8 +57,8 @@ module BrowserReviewGate
       assess(github, FakeModel.new(answer(scenarios: [ SIGN_IN, SETTINGS ])))
 
       body = github.writes.fetch(0).last
-      assert_includes body, "- [x] `BROWSER-1` Sign in and land on the dashboard"
-      assert_includes body, "- [ ] `SETTINGS-1` Change a setting and see it kept"
+      assert_includes body, "- [x] **passed** `BROWSER-1` Sign in and land on the dashboard"
+      assert_includes body, "- [ ] **missing** `SETTINGS-1` Change a setting and see it kept"
     end
 
     def test_a_report_the_decision_has_not_judged_is_shown_to_the_model_once
@@ -109,7 +109,7 @@ module BrowserReviewGate
       assess(github, FakeModel.new(answer))
 
       assert_equal [ :delete_comment, :create_comment ], github.writes.map(&:first)
-      assert_includes github.writes.last.last, "@teammate @dev-user Browser testing is needed"
+      assert_includes github.writes.last.last, "@teammate @dev-user **Human review is on hold.** Browser testing is needed"
     end
 
     def test_keeps_the_label_when_the_model_finds_the_older_run_still_covers_a_new_commit

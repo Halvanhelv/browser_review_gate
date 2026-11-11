@@ -11,7 +11,9 @@ module BrowserReviewGate
         eject policy|playbook                     copy a built-in text into the project to rewrite it there
 
       For an AI coding agent, from the checkout that was tested
-        status [--pr NUMBER]                      what the PR needs and what to do next, as JSON
+        verify [--pr NUMBER] [--environment NAME] [--report PATH] [--no-request] [--json]
+                                                  what to run, and with --report publish (or save) the finished run
+        status [--pr NUMBER] [--environment NAME] what the PR needs and what to do next, as JSON
         publish [--pr NUMBER] [--report PATH]     publish observed results (default: the saved run)
         save --report PATH                        keep results until the PR for this commit is opened
         request-assessment NUMBER                 ask CI to assess a PR that has no decision yet
@@ -21,7 +23,8 @@ module BrowserReviewGate
         ci NUMBER                                 assess the PR and take back premature reviewer requests
 
       For the team
-        stats [--days N]                          what the gate did on PRs of the last N days (default 30)
+        doctor [--json]                           check the setup and say what to fix
+        stats [--days N] [--json]                 what the gate did on PRs of the last N days (default 30)
     TEXT
 
     # `github`, `config` and `model` are replaced in tests.
@@ -42,6 +45,8 @@ module BrowserReviewGate
       when "install" then install
       when "eject" then eject
       when "status" then status
+      when "verify" then verify
+      when "doctor" then doctor
       when "publish" then publish
       when "save" then save
       when "request-assessment" then request_assessment
@@ -58,7 +63,10 @@ module BrowserReviewGate
 
     private
 
-    def config = @config ||= Config.load(root)
+    # Local commands read the settings from the default branch when it has them; see Config.load_trusted.
+    def config = @config ||= trusted_config.first
+    def settings_source = @config ? trusted_config.last : nil
+    def trusted_config = @trusted_config ||= (@config ? [ @config, "given" ] : Config.load_trusted(root))
 
     # Settings and rules live at the top of the repository, wherever the command is run from.
     def root
@@ -74,6 +82,9 @@ module BrowserReviewGate
         parser.on("--pr NUMBER", Integer) { |value| parsed[:pr] = value } if flags.include?(:pr)
         parser.on("--report PATH") { |value| parsed[:report] = value } if flags.include?(:report)
         parser.on("--days N", Integer) { |value| parsed[:days] = value } if flags.include?(:days)
+        parser.on("--environment NAME") { |value| parsed[:environment] = value } if flags.include?(:environment)
+        parser.on("--json") { parsed[:json] = true } if flags.include?(:json)
+        parser.on("--no-request") { parsed[:no_request] = true } if flags.include?(:no_request)
         parser.on("--agents LIST", Array) { |value| parsed[:agents] = value } if flags.include?(:install)
         parser.on("--gem-source SOURCE") { |value| parsed[:gem_source] = value } if flags.include?(:install)
         parser.on("--workflow NAME") { |value| parsed[:workflow] = value } if flags.include?(:install)
@@ -101,8 +112,30 @@ module BrowserReviewGate
     end
 
     def status
-      @stdout.puts JSON.pretty_generate(Status.new(github: github, config: config, prompts: Prompts.new(root)).to_h(options(:pr)[:pr]))
+      parsed = options(:pr, :environment)
+      result = Status.new(github: github, config: config, prompts: Prompts.new(root)).to_h(parsed[:pr], environment: parsed[:environment])
+      @stdout.puts JSON.pretty_generate(result.merge("settings_source" => trusted_config.last))
       0
+    end
+
+    def verify
+      parsed = options(:pr, :environment, :report, :json, :no_request)
+      outcome, result = Verify.new(github: github, config: config, prompts: Prompts.new(root))
+        .run(number: parsed[:pr], environment: parsed[:environment], report: parsed[:report], request: !parsed[:no_request])
+      message = Verify.describe(outcome, result)
+      if parsed[:json]
+        @stdout.puts JSON.pretty_generate(result.merge("outcome" => outcome, "message" => message, "settings_source" => trusted_config.last))
+      else
+        @stdout.puts message
+      end
+      Verify.exit_status(outcome)
+    end
+
+    def doctor
+      json = options(:json)[:json]
+      checks = Doctor.new(root: root, github: @github).checks
+      @stdout.puts(json ? Doctor.json(checks) : Doctor.text(checks))
+      checks.any? { |check| check.status == "FAIL" } ? 1 : 0
     end
 
     def publish
@@ -130,25 +163,16 @@ module BrowserReviewGate
     end
 
     def stats
-      days = options(:days).fetch(:days, 30)
+      parsed = options(:days, :json)
+      days = parsed.fetch(:days, 30)
       raise Error, "--days must be a positive number" unless days.positive?
 
-      counts = Stats.new(github: github, config: config).to_h(since: (Time.now.utc - days * 86_400).strftime("%Y-%m-%d"))
-      @stdout.puts "Pull requests touched in the last #{days} days: #{counts["pull_requests"]}",
-        "  assessed by the gate:           #{counts["assessed"]}",
-        "  needed a browser run:           #{counts["required"]}",
-        "    verified by a published run:  #{counts["verified"]}",
-        "    waived:                       #{counts["waived"]}",
-        "    open and still owing a run:   #{counts["owed"]}",
-        "    a run found a failing case:   #{counts["found_a_failure"]}"
+      result = Stats.new(github: github, config: config).to_h(since: (Time.now.utc - days * 86_400).strftime("%Y-%m-%d"))
+      @stdout.puts(parsed[:json] ? JSON.pretty_generate(result) : Stats.text(result, days))
       0
     end
 
-    # Version 0.1.1 installed a `--before` hook that held commands back. It is gone; a project that
-    # still has the entry gets a silent no-op until the installer removes it.
     def hook
-      return 0 if @argv.delete("--before")
-
       agent = @argv.shift
       message = Hook.new(publisher_factory: -> { Publisher.new(github: github, config: config) }).after(@stdin.read)
       output = Hook.render(message, agent)

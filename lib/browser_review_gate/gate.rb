@@ -39,7 +39,7 @@ module BrowserReviewGate
       return [ :open, "Browser verification waived by #{waived_by}." ] if waived_by
       return [ :closed, "The browser-testing assessment for this commit is not available." ] unless assessment
       return [ :open, "Browser verification is not needed." ] unless assessment.required?
-      return [ :open, "Required browser cases are verified." ] if verified?(pull_request, comments, assessment)
+      return [ :open, "Required browser cases are verified." ] if verified?(number, pull_request, comments, assessment)
 
       [ :closed, "Browser run needed: #{@config.command} #{number}" ]
     end
@@ -48,8 +48,11 @@ module BrowserReviewGate
       pull_request.fetch("labels").any? { |entry| entry["name"] == label }
     end
 
-    def verified?(pull_request, comments, assessment)
-      labelled?(pull_request, @config.label) && assessment.covered_by?(Report.latest(comments))
+    # Only cases tested on a commit of this PR count: a report about other code proves nothing here.
+    def verified?(number, pull_request, comments, assessment)
+      labelled?(pull_request, @config.label) &&
+        assessment.covered_by?(Report.latest(comments, config: @config), commits: @github.pull_request_commits(number),
+          reuse_passing: @config.scenarios["reuse_passing"])
     end
 
     # A waiver counts only from someone other than the author, unless the project allows otherwise.
@@ -146,8 +149,8 @@ module BrowserReviewGate
     def notice(number, assessment, comments)
       return "Review request paused. The browser-testing assessment for this commit is not available. Request review again to retry it." unless assessment
 
-      report = Report.latest_passing(comments)
-      missing = report && !assessment.covered_by?(report) ? "the published browser run does not cover the latest commits" :
+      report = Report.latest(comments, config: @config)
+      missing = report&.passed? && !assessment.covered_by?(report, commits: @github.pull_request_commits(number)) ? "the published browser run does not cover the latest commits" :
                            "no successful local browser run has been published yet"
       "Review request paused. Browser testing is required for this change, and #{missing}. " \
         "Run `#{@config.command} #{number}` in your AI coding agent from the PR branch."

@@ -1,10 +1,68 @@
 # Settings for browser_review_gate. Every key is optional.
+#
+# [enforced] settings are checked by the gem: it refuses a report or keeps review on hold.
+# [agent] settings are instructions the AI coding agent receives; the gem cannot make a browser
+# tool take a screenshot, it can only refuse a run without one when `gate.require_evidence` is on.
 
-# Where the running app answers, and how the person starts it. The agent never starts it itself.
-start_command:<%= start_command ? " #{start_command.inspect}" : "" %>
-url:<%= url ? " #{url.inspect}" : "" %>
-# How to sign in locally, e.g. "use the seed account from db/seeds.rb". No real credentials here.
-sign_in:
+# Where the app runs for a browser run. The agent opens `url`; `healthcheck` (a path on `url`, or a
+# full URL) is what `verify`, `status` and `doctor` ask to see whether the app answers. Nobody starts
+# the app automatically: `start_command` is what the person runs. `sign_in` is a hint such as "use the
+# seed account from db/seeds.rb"; never put real credentials here, this file is in the repository.
+# A cloud agent cannot reach localhost: give it an environment with a URL it can reach (staging, a
+# preview deployment) and select it with `--environment`.
+environments:
+  local:
+    url:<%= url ? " #{url.inspect}" : "" %>
+    healthcheck:<%= url ? ' "/up"' : "" %>
+    start_command:<%= start_command ? " #{start_command.inspect}" : "" %>
+    sign_in:
+#  staging:
+#    url: "https://staging.example.com"
+#    healthcheck: "/up"
+
+verification:
+  # The environment used when none is named with --environment.
+  environment: local
+  # [enforced] A case that passes but reports console errors / failed network requests counts as failed.
+  fail_on_console_errors: false
+  fail_on_network_errors: false
+
+evidence:
+  # [agent] never, on_failure or always. [enforced] with gate.require_evidence, for tools that can.
+  screenshots: on_failure
+  trace: never
+  # [agent] Record console errors and failed requests per case. [enforced] with gate.require_evidence.
+  console_logs: true
+  network_logs: true
+  # [enforced] Saved runs and kept evidence files in the git directory are removed after this many days.
+  retention_days: 14
+  # [enforced] Hosts that evidence links may point to, e.g. your artifact bucket. Empty: no links.
+  link_hosts: []
+
+scenarios:
+  # [enforced] The most scenarios the assessing model may ask for (1-30). Mandatory ones come on top.
+  max_count: 12
+  # [enforced] A passing case from an earlier commit of the PR keeps counting after unrelated commits.
+  # false: every scenario must pass on the newest commit.
+  reuse_passing: true
+  # [enforced] Scenarios added to every assessment that needs a run, whatever the model proposes. With
+  # `paths`, only when the change touches them, and then a run is needed whatever the model decides.
+  # `matrix: true` repeats the scenario for every combination below (at most 24 cases in total).
+  mandatory: []
+#    - id: SIGN-IN
+#      name: Sign in and land on the dashboard
+#      why: Every change to authentication must keep sign-in working.
+#      paths: ["app/controllers/sessions_controller.rb", "app/views/sessions/**"]
+#      matrix: true
+  matrix: {}
+#    role: [admin, member]
+#    viewport: [desktop, mobile]
+
+gate:
+  # [enforced] Refuse runs whose passing cases lack the evidence asked for above.
+  require_evidence: false
+  # [enforced] Any failing case keeps review on hold, not only failing required scenarios.
+  block_on_failure: true
 
 # Who assesses a PR in CI. Unset: the Claude Code CLI with a CLAUDE_CODE_OAUTH_TOKEN or
 # ANTHROPIC_API_KEY secret; with only an OPENAI_API_KEY or GEMINI_API_KEY secret, that provider's API.

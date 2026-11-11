@@ -24,6 +24,9 @@ module BrowserReviewGate
       raise Error, "Set `model` in #{Config::PATH} to assess with #{provider}" unless @model
     end
 
+    # Token counts of the last call as the provider reported them, or nil. Providers report no cost.
+    attr_reader :last_usage
+
     # Returns the model's answer as JSON text. Raises Error when the call fails or gives no answer.
     def complete(system:, user:, schema:)
       key = ENV[@key_name].to_s
@@ -32,6 +35,7 @@ module BrowserReviewGate
       url, headers, body = send("#{@provider}_request", key, system, user, schema)
       status, text = @transport.call(url, headers, body)
       response = parse(text)
+      @last_usage = usage(response)
       raise Error, "The model gave no answer: HTTP #{status} #{failure(response, text)}" unless status.to_i == 200
 
       answer = parse(send("#{@provider}_answer", response))
@@ -79,6 +83,18 @@ module BrowserReviewGate
 
     def gemini_answer(response)
       Array(response.dig("candidates", 0, "content", "parts")).filter_map { |part| part["text"] if part.is_a?(Hash) }.join
+    end
+
+    def usage(response)
+      input, output = case @provider
+                      when "anthropic" then [ response.dig("usage", "input_tokens"), response.dig("usage", "output_tokens") ]
+                      when "openai" then [ response.dig("usage", "prompt_tokens"), response.dig("usage", "completion_tokens") ]
+                      else [ response.dig("usageMetadata", "promptTokenCount"), response.dig("usageMetadata", "candidatesTokenCount") ]
+                      end
+      return unless input.is_a?(Integer) || output.is_a?(Integer)
+
+      { "provider" => @provider, "model" => (response["model"] || response["modelVersion"] || @model).to_s,
+        "input_tokens" => input, "output_tokens" => output }.compact
     end
 
     def parse(text)

@@ -39,7 +39,10 @@ module BrowserReviewGate
     def test_a_malformed_report_is_invalid_without_raising
       [ [ "not", "an", "object" ], report_data, report_data("verified_by" => "dev", "tested_sha" => "nope"),
         report_data("verified_by" => "dev", "cases" => []),
-        report_data("verified_by" => "dev", "cases" => [ { "id" => "A", "name" => "x", "result" => "skipped" } ]),
+        report_data("verified_by" => "dev", "cases" => [ { "id" => "A", "name" => "x", "result" => "maybe" } ]),
+        report_data("verified_by" => "dev", "schema_version" => 1), report_data("verified_by" => "dev", "tested_sha" => "abc1234"),
+        report_data("verified_by" => "dev", "surprise" => true), report_data("verified_by" => "dev", "tool" => { "name" => "x", "capabilities" => [ "mind-reading" ] }),
+        report_data("verified_by" => "dev", "finished_at" => "2026-11-11T09:00:00Z"),
         report_data("verified_by" => "dev", "cases" => [ { "id" => "A", "name" => "x", "result" => "pass" } ] * 2),
         report_data("verified_by" => "dev", "excluded" => [ { "name" => "x" } ]) ].each do |data|
         refute Report.new(data).valid?, data.inspect
@@ -126,7 +129,10 @@ module BrowserReviewGate
 
       counts = Stats.new(github: github).to_h(since: "2026-01-01")
 
-      assert_equal({ "pull_requests" => 2, "assessed" => 2, "required" => 2, "verified" => 1, "waived" => 0, "owed" => 1, "found_a_failure" => 2 }, counts)
+      assert_equal({ "pull_requests" => 2, "assessed" => 2, "required" => 2, "verified" => 1, "waived" => 0, "owed" => 1, "found_a_failure" => 2,
+        "runs" => 4, "failed_runs" => 2 }, counts.slice(*Stats::COUNTS))
+      assert_nil counts["hours_to_verification"], "PRs without created_at are not measured"
+      assert_equal 0, counts.dig("assessment_usage", "assessments_with_cost")
     end
 
     def test_status_lists_the_scenarios_still_to_run
@@ -134,7 +140,8 @@ module BrowserReviewGate
 
       status = Status.new(github: github, shell: FakeShell.new, probe: ->(_url) { true }).to_h(123)
 
-      assert_equal [ { "id" => "SETTINGS-1", "name" => "Change a setting and see it kept" } ], status.fetch("scenarios")
+      assert_equal [ { "id" => "SETTINGS-1", "name" => "Change a setting and see it kept", "priority" => "normal", "status" => "missing" } ],
+        status.fetch("scenarios")
       assert_equal "run_and_publish", status.fetch("next")
     end
 
@@ -156,13 +163,13 @@ module BrowserReviewGate
     end
 
     def test_status_never_tells_the_agent_to_start_the_app
-      config = Config.new("url" => "http://localhost:3000", "start_command" => "bin/dev")
+      config = Config.new("environments" => { "local" => { "url" => "http://localhost:3000", "start_command" => "bin/dev" } })
       status = ->(running) { Status.new(github: FakeGitHub.new(comments: [ assessment_comment ]), config: config, shell: FakeShell.new, probe: ->(_url) { running }).to_h(123) }
 
       assert_equal "run_and_publish", status.call(true).fetch("next")
       stopped = status.call(false)
       assert_equal "ask_to_start_app", stopped.fetch("next")
-      assert_equal false, stopped.dig("app", "running")
+      assert_equal false, stopped.dig("environment", "reachable")
     end
 
     def with_env(values)
