@@ -120,6 +120,28 @@ module BrowserReviewGate
       refute_includes github.writes.map(&:first), :remove_label
     end
 
+    def test_a_waived_pr_is_not_assessed_so_a_new_commit_neither_pings_nor_drops_the_label
+      github = FakeGitHub.new(comments: [ assessment_comment(sha: OLD) ], labels: [ "browser-verified", "browser-verification-waived" ],
+        label_actors: { "browser-verification-waived" => "lead" })
+      model = FakeModel.new(answer)
+
+      assert_nil assess(github, model)
+      assert_empty model.requests
+      assert_empty github.writes
+
+      local = FakeGitHub.new(comments: [ assessment_comment(sha: OLD) ], labels: [ "browser-verified", "browser-verification-waived" ],
+        label_actors: { "browser-verification-waived" => "lead" })
+      assert_nil Assessor.new(github: local, model: nil, config: Config.new("assessment" => "local"), log: StringIO.new).assess(123)
+      assert_empty local.writes
+    end
+
+    def test_a_waiver_from_the_author_does_not_stop_the_assessment
+      github = FakeGitHub.new(labels: [ "browser-verification-waived" ], label_actors: { "browser-verification-waived" => "dev-user" })
+
+      assert assess(github, FakeModel.new(answer)).required?
+      refute_empty github.writes
+    end
+
     def test_an_invalid_model_answer_writes_nothing
       github = FakeGitHub.new
 

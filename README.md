@@ -51,6 +51,8 @@ Then:
 
 Later commits keep the verification unless they add a scenario no counting case covers; then only the new scenarios need to run (`scenarios.reuse_passing`).
 
+When a run is not possible or no longer worth it, someone other than the author adds the `browser-verification-waived` label. Review proceeds, later pushes do not hold it, and one PR comment says who waived it; removing the label requires a run again. `browser-review-gate doctor` checks that the label exists, since GitHub creates a label only when the gate adds it.
+
 ## Two modes
 
 `assessment` chooses who decides what a browser run must cover.

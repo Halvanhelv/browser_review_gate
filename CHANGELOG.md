@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2
+
+- A waiver is visible: the gate writes one PR comment saying who waived the run and that later pushes
+  do not hold review, and removes it with the label.
+- A waived PR is not assessed: a new commit no longer drops `browser-verified`, posts "Browser run
+  needed" or pings the author, and in `ci` mode calls no model.
+- Removing a gate label triggers the workflow (`unlabeled`), so taking a waiver back puts review on
+  hold at once. Re-run `browser-review-gate install` to update the workflow.
+- `doctor` fails when the waiver label does not exist and prints the `gh label create` command.
+
 ## 0.5.1
 
 - With `assessment: local` the installer writes the workflow without the model secrets: that mode

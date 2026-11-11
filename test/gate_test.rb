@@ -96,7 +96,6 @@ module BrowserReviewGate
       waived = FakeGitHub.new(comments: [ assessment_comment ], labels: [ "browser-verification-waived" ], reviewers: [ "reviewer" ],
         label_actors: { "browser-verification-waived" => "lead" })
       assert_equal :open, enforce(waived)
-      assert_empty waived.writes
       assert_equal [ "success", "Browser verification waived by lead." ], waived.statuses.last
 
       own = FakeGitHub.new(comments: [ assessment_comment ], labels: [ "browser-verification-waived" ], reviewers: [ "reviewer" ],
@@ -105,6 +104,26 @@ module BrowserReviewGate
 
       allowed = Gate.new(github: own, config: Config.new("waiver_by_author" => true), log: StringIO.new)
       assert_equal :open, allowed.enforce(123)
+    end
+
+    def test_a_waiver_says_so_in_one_comment_and_the_comment_goes_when_the_label_does
+      github = FakeGitHub.new(comments: [ assessment_comment ], labels: [ "browser-verification-waived" ],
+        label_actors: { "browser-verification-waived" => "lead" }).comment_as(Assessment::AUTHOR)
+
+      enforce(github)
+      notice = github.comments_list.find { |comment| comment["body"].match?(Gate::WAIVED) }
+      assert_includes notice["body"], "Browser verification waived by lead"
+      assert_includes notice["body"], "Later pushes do not hold review"
+      assert_includes notice["body"], "Remove the `browser-verification-waived` label"
+
+      writes_before = github.writes.size
+      enforce(github)
+      assert_equal writes_before, github.writes.size
+
+      github.labels.delete("browser-verification-waived")
+      assert_equal :closed, enforce(github)
+      assert_includes github.writes, [ :delete_comment, notice["id"] ]
+      refute(github.comments_list.any? { |comment| comment["body"].match?(Gate::WAIVED) })
     end
 
     def test_says_when_a_published_run_no_longer_covers_the_latest_commits

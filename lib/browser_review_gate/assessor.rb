@@ -43,7 +43,13 @@ module BrowserReviewGate
 
     # Returns the assessment for the PR head. The model is asked when the head has no decision yet, or
     # when a report it has not judged lacks some of its scenarios; the comment is refreshed either way.
+    # A waived PR is not assessed (nil): a new commit neither drops the label nor pings anyone.
     def assess(number, pull_request: @github.pull_request(number), comments: @github.trusted_comments(number))
+      if (waived_by = Waiver.new(github: @github, config: @config).by(number, pull_request))
+        @log.puts "Browser verification waived by #{waived_by}; the PR is not assessed."
+        return
+      end
+
       head_sha = pull_request.fetch("head").fetch("sha")
       report = Report.latest(comments, config: @config)
       commits = @github.pull_request_commits(number)

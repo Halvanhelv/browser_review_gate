@@ -18,7 +18,7 @@ name: Browser review gate
 
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize, ready_for_review, review_requested, labeled]
+    types: [opened, reopened, synchronize, ready_for_review, review_requested, labeled, unlabeled]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -39,10 +39,10 @@ concurrency:
 jobs:
   gate:
     # A draft is assessed when it is marked ready, or when someone asks by hand (workflow_dispatch).
-    # Of all labels, only the two that open the gate matter: a published run and a waiver.
+    # Of all labels, only the two that open the gate matter, added or removed: a published run and a waiver.
     if: >-
       (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft) &&
-      (github.event.action != 'labeled' ||
+      (!contains(fromJSON('["labeled","unlabeled"]'), github.event.action) ||
       contains(fromJSON('<%= JSON.generate(gate_labels) %>'), github.event.label.name))
     runs-on: ubuntu-latest
     timeout-minutes: 10

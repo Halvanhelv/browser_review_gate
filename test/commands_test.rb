@@ -153,6 +153,7 @@ module BrowserReviewGate
       assert_equal "SKIP", checks.fetch("browser tool").status
       assert_equal "SKIP", checks.fetch("required check").status
       assert_equal "PASS", checks.fetch("model credentials").status
+      assert_equal "PASS", checks.fetch("labels").status
       json = JSON.parse(Doctor.json(checks.values))
       refute_includes Doctor.json(checks.values), "sk-"
       assert json.key?("ok")
@@ -176,6 +177,19 @@ module BrowserReviewGate
         .checks.find { |check| check.name == "trace recording" }.status
       assert_equal "PASS", status.call("a" * 12)
       assert_equal "WARN", status.call("b" * 40)
+    end
+
+    def test_doctor_names_a_missing_waiver_label_and_how_to_create_it
+      root = Dir.mktmpdir
+      Installer.new(root: root, log: StringIO.new, agents: [ "claude" ]).install
+      shell = DoctorShell.new(labels: [ "browser-verified" ])
+
+      check = Doctor.new(root: root, shell: shell, github: FakeGitHub.new, probe: ->(_url) { false }).checks.find { |item| item.name == "labels" }
+
+      assert_equal "FAIL", check.status
+      assert_includes check.message, "browser-verification-waived"
+      assert_includes check.fix, "gh label create browser-verification-waived"
+      refute_includes check.fix, "gh label create browser-verified "
     end
 
     def test_doctor_fails_without_gh_and_on_broken_settings

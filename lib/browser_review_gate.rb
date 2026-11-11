@@ -29,6 +29,7 @@ module BrowserReviewGate
   autoload :TraceCheck, File.join(__dir__, "browser_review_gate/trace_check")
   autoload :ZipReader, File.join(__dir__, "browser_review_gate/zip_reader")
   autoload :Verify, File.join(__dir__, "browser_review_gate/verify")
+  autoload :Waiver, File.join(__dir__, "browser_review_gate/waiver")
   autoload :Config, File.join(__dir__, "browser_review_gate/config")
   autoload :Freshness, File.join(__dir__, "browser_review_gate/freshness")
   autoload :Gate, File.join(__dir__, "browser_review_gate/gate")

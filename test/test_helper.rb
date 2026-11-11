@@ -151,7 +151,8 @@ module BrowserReviewGate
 
   # Answers the commands `doctor` runs, as a signed-in gh in a repository would.
   class DoctorShell
-    def initialize(gh: true, push: "true", secrets: "", protection: nil)
+    def initialize(gh: true, push: "true", secrets: "", protection: nil, labels: [ "browser-verified", "browser-verification-waived" ])
+      @labels = labels
       @gh = gh
       @push = push
       @secrets = secrets
@@ -167,6 +168,7 @@ module BrowserReviewGate
       in [ "gh", "api", path, "--jq", ".default_branch" ] then "main"
       in [ "gh", "api", path, "--jq", ".contexts[]" ] then @protection || raise(Error, "Not Found")
       in [ "gh", "secret", "list", *] then @secrets
+      in [ "gh", "api", path, "--paginate", "--jq", ".[].name" ] if path.end_with?("/labels") then @labels.join("\n")
       else raise Error, "unexpected #{argv.inspect}"
       end
     end

@@ -6,6 +6,7 @@ module BrowserReviewGate
   # it is made; the people it named are remembered in one PR comment.
   class Gate
     PAUSED = /<!--\s*browser-review-gate:paused:([A-Za-z0-9_-]+)\s*-->/
+    WAIVED = /<!--\s*browser-review-gate:waived\s*-->/
 
     def initialize(github:, config: Config.new, log: $stdout)
       @github = github
@@ -21,8 +22,10 @@ module BrowserReviewGate
       assessment = Assessment.latest(comments)
       assessment = nil unless assessment&.for?(head_sha)
 
-      verdict, description = verdict(number, pull_request, comments, assessment)
+      waived_by = Waiver.new(github: @github, config: @config).by(number, pull_request)
+      verdict, description = verdict(number, pull_request, comments, assessment, waived_by)
       report_status(head_sha, verdict, description)
+      waiver_notice(number, comments, waived_by)
       @log.puts description
       if verdict == :open
         restore_requests(number, pull_request, comments)
@@ -34,8 +37,7 @@ module BrowserReviewGate
 
     private
 
-    def verdict(number, pull_request, comments, assessment)
-      waived_by = waiver(number, pull_request)
+    def verdict(number, pull_request, comments, assessment, waived_by)
       return [ :open, "Browser verification waived by #{waived_by}." ] if waived_by
       return [ :closed, "The browser-testing assessment for this commit is not available." ] unless assessment
       return [ :open, "Browser verification is not needed." ] unless assessment.required?
@@ -56,12 +58,21 @@ module BrowserReviewGate
         assessment.covered_by?(report, commits: @github.pull_request_commits(number), reuse_passing: @config.scenarios["reuse_passing"], fresh: fresh)
     end
 
-    # A waiver counts only from someone other than the author, unless the project allows otherwise.
-    def waiver(number, pull_request)
-      return unless labelled?(pull_request, @config.waiver_label)
+    # One comment says who waived the run and that later pushes no longer hold review; it goes with the label.
+    def waiver_notice(number, comments, waived_by)
+      comment = comments.find { |item| item.dig("user", "login") == Assessment::AUTHOR && item["body"].to_s.match?(WAIVED) }
+      return comment && @github.delete_comment(comment.fetch("id")) unless waived_by
 
-      actor = @github.label_actor(number, @config.waiver_label)
-      actor if actor && (@config.waiver_by_author || actor != pull_request.dig("user", "login"))
+      body = "Browser verification waived by #{Markdown.escape(waived_by)}: review proceeds without a browser run. " \
+        "Later pushes do not hold review. Remove the `#{@config.waiver_label}` label to require a run again.\n\n" \
+        "<!-- browser-review-gate:waived -->"
+      if comment.nil?
+        @github.create_comment(number, body)
+      elsif comment["body"] != body
+        @github.update_comment(comment.fetch("id"), body)
+      end
+    rescue Error => error
+      @log.puts "The waiver comment was not updated: #{error.message.lines.first.to_s.strip}"
     end
 
     # A workflow installed before statuses were added has no permission to write them.

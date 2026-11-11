@@ -42,6 +42,7 @@ module BrowserReviewGate
       browser_tools(config)
       workflow(config) if config
       required_check(config) if config && gh_ready
+      labels(config) if config && gh_ready
       provider_secrets(config) if config && gh_ready
       @checks
     end
@@ -234,6 +235,17 @@ module BrowserReviewGate
         "Make #{config.status_context} a required status check")
     rescue Error
       add("required check", "SKIP", "could not be checked")
+    end
+
+    # The gate adds its own label, and GitHub creates it then; a waiver is added by a person, so its label must exist.
+    def labels(config)
+      github = @github || GitHub.new(shell: @shell)
+      names = run("gh", "api", "repos/#{github.repository}/labels", "--paginate", "--jq", ".[].name")
+      return add("labels", "SKIP", "repository labels could not be read") unless names
+      return add("labels", "PASS", "#{config.waiver_label} exists") if names.lines.map(&:strip).include?(config.waiver_label)
+
+      add("labels", "FAIL", "#{config.waiver_label} does not exist, so nobody can waive a run",
+        %(gh label create #{config.waiver_label} --description "Review may proceed without a browser run"))
     end
 
     def provider_secrets(config)

@@ -42,6 +42,8 @@ module BrowserReviewGate
       assert_includes JSON.parse(read(".codex/hooks.json")).dig("hooks", "PostToolUse", 0, "hooks", 0, "command"), "hook codex || true"
       assert_includes workflow, "labeled"
       assert_includes workflow, %(fromJSON('["browser-verified","browser-verification-waived"]'))
+      assert_includes workflow, "types: [opened, reopened, synchronize, ready_for_review, review_requested, labeled, unlabeled]"
+      assert_includes workflow, %(fromJSON('["labeled","unlabeled"]'))
 
       agents = read("AGENTS.md")
       assert_includes agents, "Existing notes."
