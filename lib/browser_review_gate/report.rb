@@ -18,7 +18,7 @@ module BrowserReviewGate
     URL_PATTERN = %r{\A(?:https?://|/)\S*\z}
     TOP_KEYS = %w[schema_version tested_sha verified_by environment tool started_at finished_at coverage_complete
                   cases excluded runs failed_runs not_required].freeze
-    CASE_KEYS = %w[id name result url details reason evidence tested_sha verified_by environment tool].freeze
+    CASE_KEYS = %w[id name result url details reason evidence tested_sha verified_by environment tool flaky].freeze
     EVIDENCE_KEYS = %w[files console_errors network_errors links trace_check].freeze
     FILE_KEYS = %w[kind name media_type bytes sha256].freeze
 
@@ -46,16 +46,27 @@ module BrowserReviewGate
 
     # Later results replace earlier ones case by case; cases that were not run again are kept. The
     # merged report counts the runs published on the PR and how many of them had a failing case.
+    # A case whose results differed on the same commit is marked flaky; the latest result still counts.
     def self.merge(previous_data, latest_data, config: Config.new)
       previous = new(previous_data, config: config)
       latest = new(latest_data, config: config)
       return latest unless latest.valid?
 
       combined = previous.valid? ? previous.cases.to_h { |test_case| [ test_case["id"], test_case ] } : {}
-      latest.cases.each { |test_case| combined[test_case["id"]] = test_case }
+      latest.cases.each { |test_case| combined[test_case["id"]] = with_flaky_mark(combined[test_case["id"]], test_case) }
       failed = latest.cases.any? { |test_case| test_case["result"] == "fail" } ? 1 : 0
       new(latest.to_h.merge("cases" => combined.values, "runs" => previous.runs + 1, "failed_runs" => previous.failed_runs + failed), config: config)
     end
+
+    # The same code passed once and failed once, so the outcome does not depend on the change alone.
+    # The mark stays for as long as the case is run on that commit.
+    def self.with_flaky_mark(earlier, test_case)
+      return test_case unless earlier && earlier["tested_sha"] == test_case["tested_sha"]
+      return test_case unless earlier["flaky"] == true || [ earlier["result"], test_case["result"] ].sort == %w[fail pass]
+
+      test_case.merge("flaky" => true)
+    end
+    private_class_method :with_flaky_mark
 
     def initialize(data, config: Config.new)
       @config = config
@@ -120,6 +131,8 @@ module BrowserReviewGate
       missing_evidence(test_case, evidence) || trace_problem(evidence)
     end
 
+    def flaky?(id) = cases.any? { |test_case| test_case["id"] == id && test_case["flaky"] == true }
+
     def failed? = cases.any? { |test_case| status_of(test_case["id"]) == "failed" }
 
     # Complete, and nothing failed when failures block review.
@@ -144,6 +157,7 @@ module BrowserReviewGate
           found << "case #{position} is #{test_case["result"]} and needs a reason" unless text?(test_case["reason"], 300)
         end
         found << "case #{position} details must say what was observed" unless text?(test_case["details"], 500)
+        found << "case #{position} flaky is set by the gem from earlier runs, not by the report" if test_case.key?("flaky")
         evidence = test_case["evidence"].is_a?(Hash) ? test_case["evidence"] : {}
         problem = test_case["result"] == "pass" ? (missing_evidence(test_case, evidence) || trace_problem(evidence)) : nil
         found << "case #{position} #{problem}" if problem
@@ -320,6 +334,7 @@ module BrowserReviewGate
       errors << "case #{position} details must be a string of at most 500 characters" unless test_case["details"].nil? || text?(test_case["details"], 500)
       errors << "case #{position} reason must be a string of at most 300 characters" unless test_case["reason"].nil? || text?(test_case["reason"], 300)
       errors << "case #{position} tool must name the browser tool" unless test_case["tool"].is_a?(Hash) && text?(test_case["tool"]["name"], 60)
+      errors << "case #{position} flaky must be true when present" unless test_case["flaky"].nil? || test_case["flaky"] == true
       validate_evidence(test_case["evidence"], position) unless test_case["evidence"].nil?
     end
 
@@ -378,6 +393,7 @@ module BrowserReviewGate
     def markdown_case(test_case, commits)
       status = status_of(test_case["id"], commits: commits)
       problem = test_case["result"] == "pass" && status == "failed" ? " (#{policy_problem(test_case)})" : ""
+      problem += " (flaky: results differed on this commit)" if test_case["flaky"] == true
       page = test_case["url"].to_s.empty? ? "" : Markdown.escape(test_case["url"])
       "| `#{test_case["id"]}` #{Markdown.escape(test_case["name"])} | #{status.upcase}#{Markdown.escape(problem)} | #{page} | " \
         "`#{test_case["tested_sha"][0, 7]}` | #{markdown_evidence(test_case["evidence"])} |"

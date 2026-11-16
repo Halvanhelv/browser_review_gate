@@ -77,7 +77,55 @@ module BrowserReviewGate
       refute Report.new(data).valid?
     end
 
+    def test_a_case_that_fails_and_then_passes_on_the_same_commit_counts_and_is_marked_flaky
+      merged = rerun("fail", "pass")
+
+      assert_equal "passed", merged.status_of("BROWSER-1")
+      assert merged.flaky?("BROWSER-1")
+      assert merged.passed?
+      assert_includes merged.markdown, 'PASSED \(flaky: results differed on this commit\)'
+    end
+
+    def test_a_case_that_passes_and_then_fails_on_the_same_commit_still_blocks
+      merged = rerun("pass", "fail")
+
+      assert_equal "failed", merged.status_of("BROWSER-1")
+      assert merged.flaky?("BROWSER-1")
+      refute merged.passed?
+    end
+
+    def test_a_case_that_fails_on_one_commit_and_passes_on_the_next_is_a_fix_not_a_flake
+      refute rerun("fail", "pass", first_sha: OLD).flaky?("BROWSER-1")
+      refute rerun("pass", "pass").flaky?("BROWSER-1")
+    end
+
+    def test_the_flaky_mark_stays_with_the_commit_it_was_seen_on
+      flaky = rerun("fail", "pass")
+      again = Report.merge(flaky.to_h, attempt("pass"))
+      untouched = Report.merge(flaky.to_h, attempt("pass", id: "BROWSER-2"))
+      moved_on = Report.merge(flaky.to_h, attempt("pass", sha: "c" * 40))
+
+      assert again.flaky?("BROWSER-1"), "the same commit stays flaky"
+      assert untouched.flaky?("BROWSER-1"), "a case that was not run again keeps its mark"
+      refute moved_on.flaky?("BROWSER-1"), "a run on another commit starts clean"
+    end
+
+    def test_only_the_gem_marks_a_case_flaky
+      submitted = report(browser_case("BROWSER-1", "Sign in").merge("flaky" => true))
+
+      assert_includes submitted.submission_errors.join, "flaky is set by the gem"
+      refute report(browser_case("BROWSER-1", "Sign in").merge("flaky" => "yes")).valid?
+    end
+
     private
+
+    def attempt(result, id: "BROWSER-1", sha: HEAD)
+      report_data("tested_sha" => sha, "verified_by" => "dev", "cases" => [ browser_case(id, "Sign in", result: result) ])
+    end
+
+    def rerun(first, second, first_sha: HEAD)
+      Report.merge(Report.merge({}, attempt(first, sha: first_sha)).to_h, attempt(second))
+    end
 
     def case_with(evidence) = browser_case("BROWSER-1", "Sign in").merge("evidence" => evidence)
 

@@ -5,7 +5,7 @@ module BrowserReviewGate
   # the comments record is counted: each PR keeps its latest assessment and its merged report, so
   # earlier assessments of the same PR and their token usage are not visible any more.
   class Stats
-    COUNTS = %w[pull_requests assessed required verified waived owed found_a_failure runs failed_runs].freeze
+    COUNTS = %w[pull_requests assessed required verified waived owed found_a_failure runs failed_runs flaky_cases].freeze
 
     def initialize(github:, config: Config.new)
       @github = github
@@ -35,7 +35,8 @@ module BrowserReviewGate
         "    waived:                       #{result["waived"]}",
         "    open and still owing a run:   #{result["owed"]}",
         "    a run found a failing case:   #{result["found_a_failure"]}",
-        "  browser runs published:         #{result["runs"]} (#{result["failed_runs"]} with a failing case)" ]
+        "  browser runs published:         #{result["runs"]} (#{result["failed_runs"]} with a failing case)",
+        "  flaky cases:                    #{result["flaky_cases"]} (results differed on one commit)" ]
       if (time = result["hours_to_verification"])
         lines << "  PR opened to verified run:      median #{time["median"]} h over #{time["measured"]} PRs"
       end
@@ -77,6 +78,7 @@ module BrowserReviewGate
       counts["runs"] += report.runs
       counts["failed_runs"] += report.failed_runs
       counts["found_a_failure"] += 1 if report.failed_runs.positive?
+      counts["flaky_cases"] += report.cases.count { |test_case| test_case["flaky"] == true }
       report.cases.each { |test_case| failing[test_case["id"]] += 1 if report.status_of(test_case["id"]) == "failed" }
       measure(pull_request, comments, labels, hours)
     end

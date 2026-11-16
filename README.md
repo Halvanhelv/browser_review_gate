@@ -158,6 +158,8 @@ A report is JSON in the shape the playbook describes (`schema_version: 2`): the 
 
 The PR comment shows every scenario as passed, failed, blocked, skipped, missing or stale, the environment and tool, the tested commit of each case, and the evidence. It says plainly that observations are the agent's account.
 
+A case whose results differ on the same commit, a fail and a pass, is marked flaky in the PR and counted in `stats`. The latest result still decides: a failure followed by a passing re-run counts as passed, and a pass followed by a failure still blocks. Only the gem sets the mark; a submitted report that sets it is refused.
+
 ## Commands
 
 ```

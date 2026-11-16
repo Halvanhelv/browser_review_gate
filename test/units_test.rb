@@ -122,7 +122,8 @@ module BrowserReviewGate
     end
 
     def test_stats_count_what_the_gate_did
-      github = FakeGitHub.new(comments: [ assessment_comment, report_comment({ "failed_runs" => 1, "runs" => 2 }) ])
+      flaky = browser_case("BROWSER-1", "Sign in").merge("flaky" => true)
+      github = FakeGitHub.new(comments: [ assessment_comment, report_comment({ "failed_runs" => 1, "runs" => 2, "cases" => [ flaky ] }) ])
       github.define_singleton_method(:pull_requests_updated_since) do |_date|
         [ { "number" => 1, "state" => "closed", "labels" => [ { "name" => "browser-verified" } ] }, { "number" => 2, "state" => "open", "labels" => [] } ]
       end
@@ -130,7 +131,8 @@ module BrowserReviewGate
       counts = Stats.new(github: github).to_h(since: "2026-01-01")
 
       assert_equal({ "pull_requests" => 2, "assessed" => 2, "required" => 2, "verified" => 1, "waived" => 0, "owed" => 1, "found_a_failure" => 2,
-        "runs" => 4, "failed_runs" => 2 }, counts.slice(*Stats::COUNTS))
+        "runs" => 4, "failed_runs" => 2, "flaky_cases" => 2 }, counts.slice(*Stats::COUNTS))
+      assert_includes Stats.text(counts, 30), "flaky cases"
       assert_nil counts["hours_to_verification"], "PRs without created_at are not measured"
       assert_equal 0, counts.dig("assessment_usage", "assessments_with_cost")
     end

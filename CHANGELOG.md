@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4
+
+- A case that fails and passes on the same commit is marked flaky in the PR comment and counted in
+  `stats` (`flaky_cases`). The latest result still decides, so the gate passes and blocks as before;
+  the earlier failure is no longer lost when a re-run passes. Reports cannot set the mark themselves.
+
 ## 0.5.3
 
 - Every comment the gem writes opens with one line saying `browser_review_gate` wrote it: the
