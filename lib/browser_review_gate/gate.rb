@@ -39,6 +39,7 @@ module BrowserReviewGate
 
     def verdict(number, pull_request, comments, assessment, waived_by)
       return [ :open, "Browser verification waived by #{waived_by}." ] if waived_by
+      return [ :closed, "Draft: browser testing is assessed when it is marked ready for review." ] if !assessment && pull_request["draft"]
       return [ :closed, "The browser-testing assessment for this commit is not available." ] unless assessment
       return [ :open, "Browser verification is not needed." ] unless assessment.required?
       return [ :open, "Required browser cases are verified." ] if verified?(number, pull_request, comments, assessment)
@@ -91,7 +92,7 @@ module BrowserReviewGate
       @github.remove_reviewers(number, reviewers: reviewers, team_reviewers: teams)
       waiting = paused(comments)
       waiting = { "reviewers" => waiting["reviewers"] | reviewers, "teams" => waiting["teams"] | teams }
-      write_notice(number, comments, "#{author(pull_request)}#{notice(number, assessment, comments)}\n\n#{names(waiting)} will be " \
+      write_notice(number, comments, "#{author(pull_request)}#{notice(number, pull_request, assessment, comments)}\n\n#{names(waiting)} will be " \
         "asked again automatically once the run is published.", waiting)
       @log.puts "Took back reviewer requests until browser verification is available."
     end
@@ -158,7 +159,8 @@ module BrowserReviewGate
       (waiting["reviewers"] + waiting["teams"]).map { |name| Markdown.escape(name) }.join(", ")
     end
 
-    def notice(number, assessment, comments)
+    def notice(number, pull_request, assessment, comments)
+      return "Review request paused. This PR is a draft: browser testing is assessed when it is marked ready for review." if !assessment && pull_request["draft"]
       return "Review request paused. The browser-testing assessment for this commit is not available. Request review again to retry it." unless assessment
 
       report = Report.latest(comments, config: @config)

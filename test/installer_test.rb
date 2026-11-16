@@ -86,12 +86,12 @@ module BrowserReviewGate
       assert_equal 1, cursor.fetch("afterShellExecution").size
     end
 
-    def test_the_workflow_leaves_drafts_alone_until_they_are_ready_and_passes_every_provider_key
+    def test_the_workflow_runs_on_drafts_too_and_passes_every_provider_key
       installer.install
       workflow = read(".github/workflows/browser-review-gate.yml")
 
       assert_includes workflow, "ready_for_review"
-      assert_includes workflow, "github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft"
+      refute_includes workflow, "pull_request.draft"
       %w[CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY].each { |name| assert_includes workflow, "secrets.#{name}" }
       assert Config.load(@root).provider.nil?
     end

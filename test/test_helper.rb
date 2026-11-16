@@ -16,7 +16,8 @@ module BrowserReviewGate
     attr_accessor :branch_pr
 
     def initialize(head: HEAD, labels: [], comments: [], files: nil, reviewers: [], teams: [], author: "dev-user",
-      branch: "feature/thing", login: "dev-user", label_actors: {}, commit_author: nil, writers: [ "dev-user" ], commits: [ OLD, HEAD ])
+      branch: "feature/thing", login: "dev-user", label_actors: {}, commit_author: nil, writers: [ "dev-user" ], commits: [ OLD, HEAD ], draft: false)
+      @draft = draft
       @commits = commits
       @writers = writers
       @label_actors = label_actors
@@ -54,7 +55,7 @@ module BrowserReviewGate
     def pull_request_number_for_branch = @branch_pr
 
     def pull_request(_number)
-      { "title" => "Change the home page", "user" => { "login" => @author },
+      { "title" => "Change the home page", "user" => { "login" => @author }, "draft" => @draft,
         "head" => { "sha" => @head, "ref" => @branch }, "labels" => @labels.map { |name| { "name" => name } },
         "requested_reviewers" => @reviewers.map { |name| { "login" => name } },
         "requested_teams" => @teams.map { |slug| { "slug" => slug } } }

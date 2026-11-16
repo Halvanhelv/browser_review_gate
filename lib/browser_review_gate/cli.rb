@@ -27,8 +27,9 @@ module BrowserReviewGate
         stats [--days N] [--json]                 what the gate did on PRs of the last N days (default 30)
     TEXT
 
-    # `github`, `config`, `model` and `shell` are replaced in tests.
-    def initialize(argv, stdin: $stdin, stdout: $stdout, stderr: $stderr, github: nil, config: nil, model: nil, shell: nil)
+    # `github`, `config`, `model`, `shell` and `env` are replaced in tests.
+    def initialize(argv, stdin: $stdin, stdout: $stdout, stderr: $stderr, github: nil, config: nil, model: nil, shell: nil, env: ENV)
+      @env = env
       @shell = shell
       @argv = argv.dup
       @github = github
@@ -190,18 +191,26 @@ module BrowserReviewGate
         return 0
       end
 
-      failed = false
-      begin
-        model = @model || (config.local? ? nil : ModelClient.for(config))
-        Assessor.new(github: github, model: model, config: config, prompts: Prompts.new(root), log: @stdout).assess(number, pull_request: pull_request)
-      rescue Error => error
-        failed = true
-        # Escaped per the workflow-command spec so a message can never start a command of its own.
-        message = error.message.gsub("%", "%25").gsub("\r", "%0D").gsub("\n", "%0A")
-        @stdout.puts "::error title=Browser verification assessment failed::#{message}"
+      # A draft is assessed when it is marked ready or by hand; until then its head stays on hold.
+      if pull_request["draft"] && @env["GITHUB_EVENT_NAME"] != "workflow_dispatch"
+        @stdout.puts "PR #{number} is a draft; it is assessed when it is marked ready for review."
+        failed = false
+      else
+        failed = !assessed?(number, pull_request)
       end
       Gate.new(github: github, config: config, log: @stdout).enforce(number)
       failed ? 1 : 0
+    end
+
+    def assessed?(number, pull_request)
+      model = @model || (config.local? ? nil : ModelClient.for(config))
+      Assessor.new(github: github, model: model, config: config, prompts: Prompts.new(root), log: @stdout).assess(number, pull_request: pull_request)
+      true
+    rescue Error => error
+      # Escaped per the workflow-command spec so a message can never start a command of its own.
+      message = error.message.gsub("%", "%25").gsub("\r", "%0D").gsub("\n", "%0A")
+      @stdout.puts "::error title=Browser verification assessment failed::#{message}"
+      false
     end
   end
 end

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.5
+
+- A draft is gated too. A push to a draft used to skip the workflow, so the new head had no
+  `browser-verification` status and review looked open while the old comment still said it was on
+  hold. Now the head of a draft stays pending, and a reviewer requested on a draft is taken back. A
+  draft is still assessed only when it is marked ready (or dispatched by hand), so no model is
+  called on draft pushes. Re-run `browser-review-gate install` to update the workflow.
+
 ## 0.5.4
 
 - A case that fails and passes on the same commit is marked flaky in the PR comment and counted in
